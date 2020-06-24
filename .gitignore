@@ -1,0 +1,5 @@
+data/sun360*
+src/TRASH
+src/__pycache__
+models/__pycache__
+*.pyc
