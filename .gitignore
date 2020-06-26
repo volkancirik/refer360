@@ -5,3 +5,4 @@ models/__pycache__
 *.pyc
 py_bottom_up_attention/*
 src/exp*
+data/dumps/*.npy
