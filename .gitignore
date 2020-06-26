@@ -3,3 +3,5 @@ src/TRASH
 src/__pycache__
 models/__pycache__
 *.pyc
+py_bottom_up_attention/*
+src/exp*

@@ -2,13 +2,13 @@
 Random agent playing the game
 """
 from env import Refer360Batch
-from env import FOV_SIZE
 import json
 
 import numpy as np
 import os
 import torch
 
+FOV_SIZE = 100
 DEGREES = 15
 __look__ = {1: (0, DEGREES),
             2: (0, -DEGREES),

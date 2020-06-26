@@ -145,8 +145,10 @@ class Refer360Batch():
       data_split, sentences = load_datasets([split_name], self.images)
       for jj, datum in enumerate(data_split[0]):
         datum['id'] = '{}_{}'.format(split_name, jj)
-        for node in datum['nodes']:
-          connectivity += [len(datum['nodes'][node]['neighbors'])]
+
+        if 'nodes' in datum:
+          for node in datum['nodes']:
+            connectivity += [len(datum['nodes'][node]['neighbors'])]
         self.data.append(datum)
 
       if prepare_vocab:
@@ -154,9 +156,13 @@ class Refer360Batch():
     print('{} split(s) loaded with {} instances'.format(
         ','.join(splits), len(self.data)))
 
-    print('min mean max connectivity %d %d %d' %
-          (np.min(connectivity), np.mean(connectivity), np.max(connectivity)))
+    if 'nodes' in datum:
+      print('min mean max connectivity %d %d %d' %
+            (np.min(connectivity), np.mean(connectivity), np.max(connectivity)))
+      self.max_connectivity = np.max(connectivity)
 
+    else:
+      self.max_connectivity = 0
     self.use_sentences = use_sentences
     self.use_gt_action = use_gt_action
     if self.use_sentences:
@@ -170,7 +176,6 @@ class Refer360Batch():
                              std=[0.229, 0.224, 0.225]),
     ])
     self.predictions = [None for ii in range(self.batch_size)]
-    self.max_connectivity = np.max(connectivity)
 
     np.random.seed(seed)
     torch.manual_seed(seed)

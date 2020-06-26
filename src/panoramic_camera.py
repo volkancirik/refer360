@@ -20,21 +20,25 @@ class PanoramicCamera:
     self.img_path = ''
     self._img = None
 
-  def load_img(self, img_path, gt_loc=None):
+  def load_img(self, img_path, gt_loc=None, convert_color=True):
     """Load image for the camera.
     """
 
     self.img_path = img_path
-    self._img = cv2.cvtColor(cv2.imread(
-        self.img_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    img = cv2.imread(
+        self.img_path, cv2.IMREAD_COLOR)
+    if convert_color:
+      self._img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    else:
+      self._img = img
 
     [self._height, self._width, _] = self._img.shape
 
     if gt_loc:
       self._img[gt_loc[0]-50:gt_loc[0]+50,
-                gt_loc[1]-50:gt_loc[1]+50, 0] = 255
-      self._img[gt_loc[0]-50:gt_loc[0]+50,
-                gt_loc[1]-50:gt_loc[1]+50, 1:] = 0
+                gt_loc[1]-50: gt_loc[1]+50, 0] = 255
+      self._img[gt_loc[0]-50: gt_loc[0]+50,
+                gt_loc[1]-50: gt_loc[1]+50, 1:] = 0
 
   def look(self, lat, lng):
     """Look at lng,lat

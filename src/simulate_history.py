@@ -10,8 +10,8 @@ examples:
 PYTHONPATH=.. python simulate_history.py exp-random/samples/1575_randomagent.json 1 15 
 PYTHONPATH=.. python simulate_history.py exp-random/samples/2100_randomagent.json 0 15
 '''
-DATA_PATH = '/projects2/touchdown/py_bottom_up_attention/demo/data/genome/1600-400-20'
-DETECTRON2_YAML = '/projects2/touchdown/py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
+DATA_PATH = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
+DETECTRON2_YAML = '../py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
 import cv2
 import sys
 
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
   original = cv2.imread(image_path, cv2.IMREAD_COLOR)
   cam = camera.PanoramicCamera()
-  cam.load_img(image_path)
+  cam.load_img(image_path, convert_color=False)
 
   waldo_img = cv2.resize(cv2.imread(
       '../data/waldo.png', cv2.IMREAD_COLOR), (60, 40), interpolation=cv2.INTER_AREA)
