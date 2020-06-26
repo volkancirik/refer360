@@ -17,6 +17,10 @@ This command should generate an experiment folder `src/exp-random`. To simulate 
 
 Till the agents actions are over use `awsd` keys to observe what the agent did. After the agent's actions are over (there should be a blue prompt on the upper left frame), you can use `awsd` to move the field of view to left,up,down,right.  Press `c` to close the window.
 
+![Random Agent Demo](data/github_demo0.gif)
+
+
+
 ### Setting up Images
 
 We used [SUN360](http://people.csail.mit.edu/jxiao/SUN360/main.html) image database as our source of scenes. Please contact authors at MIT to obtain the images. We used scenes of size 9104x4552 for our experiments. The list of images are in `data/imagelist.txt`, use this list to `wget` or `curl` the images. Add these images to `data/sun360_originals/` where the folder structure should be as follows for scene types and categories:

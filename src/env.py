@@ -298,6 +298,7 @@ class Refer360Batch():
     for ii in range(self.batch_size):
       slat, slng = rad2degree(np.random.uniform(0, 6),
                               np.random.uniform(1, 1.5))
+
       self.env.cameras[ii].lng = slng
       self.env.cameras[ii].lat = slat
       self.env.cameras[ii].look(

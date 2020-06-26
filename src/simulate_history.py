@@ -92,8 +92,8 @@ if __name__ == '__main__':
   print('n_steps:', n_steps)
 
   full_w, full_h = 4552, 2276
-  canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
-  obj_canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
+  canvas = np.ones((full_h, full_w, 3), dtype='uint8')*255
+  obj_canvas = np.ones((full_h, full_w, 3), dtype='uint8')*255
 
   size = 20
 
@@ -207,7 +207,7 @@ if __name__ == '__main__':
       curr_lng = pixel_map[pred_y][pred_x][0]
       curr_lat = pixel_map[pred_y][pred_x][1]
 
-    obj_canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
+    obj_canvas = np.ones((full_h, full_w, 3), dtype='uint8')*255
     cv2.fillPoly(obj_canvas, points, color)
     for o in objects:
       o_lat, o_lng, o_type = o[0], o[1], o[2]

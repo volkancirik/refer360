@@ -55,8 +55,8 @@ def run_random_agent():
 
   ref360env.reset_epoch()
   n_epochs = 1
-  max_step = 20
-  repeat = (3, 10)
+  max_step = 10
+  repeat = (3, 5)
   threshold = 1.0 / max_step
 
   for epoch in range(n_epochs):
