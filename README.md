@@ -6,6 +6,10 @@ This repository is for ACL2020 paper [Refer360: A Referring Expression Recogniti
 
 Setup an anaconda environment first if you don't have one. Run `install.sh` to create conda environment `refer360sim`.
 
+Preprocess the json files for the simulator:
+
+    PYTHONPATH=.. python dump_data.py  ../data/dumps all 
+
 Now you should be able to run the random agent under `src`.
 
     source activate refer360sim
