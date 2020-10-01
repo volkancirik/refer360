@@ -263,7 +263,7 @@ def dump_datasets(splits, image_categories, output_file,
         if img_category not in cat2loc or img_category not in image_set:
           continue
         img_loc = cat2loc[img_category]
-        datum['pano'] = '../data/sun360_originals/{}/{}/{}'.format(
+        datum['pano'] = '../data/refer360images/{}/{}/{}'.format(
             img_loc, img_category, pano_name)
         datum['img_category'] = img_category
         stats[img_loc] += 1
