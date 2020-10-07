@@ -61,11 +61,10 @@ def rad2degree(lat, lng):
 def generate_fovs(image_path, node_path, fov_prefix,
                   full_w=4552,
                   full_h=2276,
-                  fov_size=512):
+                  fov_size=400):
 
   cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
-  cam.load_img(image_path, lng=0,
-               lat=0)
+  cam.load_img(image_path)
 
   nodes = np.load(node_path,
                   allow_pickle=True)[()]
@@ -80,10 +79,9 @@ def generate_fovs(image_path, node_path, fov_prefix,
 def generate_graph(image_path, predictor, vg_classes,
                    full_w=4552,
                    full_h=2276,
-                   fov_size=512,
                    left_w=128):
   font = cv2.FONT_HERSHEY_SIMPLEX
-  THRESHOLD = 20
+  THRESHOLD = 30
   size = 20
 
   objects = []
@@ -97,37 +95,41 @@ def generate_graph(image_path, predictor, vg_classes,
   objects.append((slat, slng, -1, sx, sy, [sx-1, sy-1, sx+1, sy+1]))
   nodes.append([sx, sy])
 
-  cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
-  cam.load_img(image_path, lng=0,
-               lat=0)
+  for fov_size in [400, 800, 1200]:
 
-  for lng in range(-45, 90, 45):
-    for lat in range(-180, 180, 45):
-      cam.look(lat, lng)
-      pixel_map = cam.get_map()
-      img = cam.get_image()
+    cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
+    cam.load_img(image_path)
 
-      detectron_outputs = predictor(img)
+    for lng in range(-45, 90, 45):
+      for lat in range(-180, 180, 45):
+        cam.look(lat, lng)
+        pixel_map = cam.get_map()
+        img = cam.get_image()
 
-      boxes, object_types = get_det2_features(
-          detectron_outputs["instances"].to("cpu"))
-      for b, o in zip(boxes, object_types):
-        center_x = int((b[0]+b[2])/2)
-        center_y = int((b[1]+b[3])/2)
-        o_lat = pixel_map[center_y][center_x][0]
-        o_lng = pixel_map[center_y][center_x][1]
+        # cv2.imshow("", img)
+        # cv2.waitKey()
 
-        flag = True
-        for r in objects:
-          d = ((r[0] - o_lng)**2 + (r[1] - o_lat)**2)**0.5
-          if d < THRESHOLD and r[2] == o:
-            flag = False
-        if flag:
-          x = int(full_w * ((o_lat + 180)/360.0))
-          y = int(full_h - full_h *
-                  ((o_lng + 90)/180.0))
-          objects.append((o_lat, o_lng, o, x, y, b))
-          nodes.append([x, y])
+        detectron_outputs = predictor(img)
+
+        boxes, object_types = get_det2_features(
+            detectron_outputs["instances"].to("cpu"))
+        for b, o in zip(boxes, object_types):
+          center_x = int((b[0]+b[2])/2)
+          center_y = int((b[1]+b[3])/2)
+          o_lat = pixel_map[center_y][center_x][0]
+          o_lng = pixel_map[center_y][center_x][1]
+
+          flag = True
+          for r in objects:
+            d = ((r[0] - o_lng)**2 + (r[1] - o_lat)**2)**0.5
+            if d < THRESHOLD and r[2] == o:
+              flag = False
+          if flag:
+            x = int(full_w * ((o_lat + 180)/360.0))
+            y = int(full_h - full_h *
+                    ((o_lng + 90)/180.0))
+            objects.append((o_lat, o_lng, o, x, y, b))
+            nodes.append([x, y])
 
   tri, order2nid, n_nodes = get_triangulation(nodes, left_w, full_w)
   canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
@@ -211,26 +213,34 @@ def generate_graph(image_path, predictor, vg_classes,
 
 if __name__ == '__main__':
 
-  data_path = '/projects2/touchdown/py_bottom_up_attention/demo/data/genome/1600-400-20'
+  data_path = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
   vg_classes = []
   with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
     for object in f.readlines():
       vg_classes.append(object.split(',')[0].lower().strip())
 
   MetadataCatalog.get("vg").thing_classes = vg_classes
-  yaml_file = '/projects2/touchdown/py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
+  yaml_file = '../py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
   cfg = get_cfg()
   cfg.merge_from_file(yaml_file)
   cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
-  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
+  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
   predictor = DefaultPredictor(cfg)
 
-  image_list = [line.strip() for line in open(sys.argv[1])]
-  image_root = sys.argv[2]  # ../data/sun360_originals
-  out_root = sys.argv[3]
+  image_list = [line.strip()
+                for line in open(sys.argv[1])]  # ../data/imagelist.txt
+  image_root = sys.argv[2]  # ../data/refer360images
+  out_root = sys.argv[3]  # ../data/graph_data
+
+  if not os.path.exists(out_root):
+    try:
+      os.makedirs(out_root)
+    except:
+      print('Cannot create folder {}'.format(out_root))
+      quit(1)
 
   pbar = tqdm(image_list)
   for fname in pbar:
