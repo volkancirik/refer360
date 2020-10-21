@@ -3,11 +3,11 @@
 import torchvision.models as models
 
 import torch.nn as nn
-from src.models.td_models import clones
-from src.utils import vectorize_seq
+from models.td_models import clones
+from utils import vectorize_seq
 LOG_ZERO_PROB = -10000
 
-from src.model_utils import get_localizer
+from model_utils import get_localizer
 
 
 class Actor(nn.Module):

@@ -1,9 +1,9 @@
 
-from src.models.td_models import Concat
-from src.models.td_models import ConcatConv
-from src.models.td_models import RNN2Conv
-from src.models.td_models import LingUNet
-from src.models.visualbert import VisualBert
+from models.td_models import Concat
+from models.td_models import ConcatConv
+from models.td_models import RNN2Conv
+from models.td_models import LingUNet
+from models.visualbert import VisualBert
 
 
 def get_localizer(args, n_vocab):

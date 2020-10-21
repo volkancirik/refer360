@@ -4,6 +4,7 @@ argv[1] : data dump folder
 argv[2] : list of image categories comma separated or 'all'
 argv[3] : graph data root (optional)
 example:
+$ PYTHONPATH=.. python dump_data.py  ../data/dumps all
 $ PYTHONPATH=.. python dump_data.py  ../data/dumps all ../data/graph_data
 $ PYTHONPATH=.. python dump_data.py  ../data/dumps restaurant
 $ PYTHONPATH=.. python dump_data.py  ../data/dumps restaurant,shop,expo_showroom,living_room,bedroom

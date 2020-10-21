@@ -25,6 +25,7 @@ class PanoramicCamera:
     """
 
     self.img_path = img_path
+
     img = cv2.imread(
         self.img_path, cv2.IMREAD_COLOR)
     if convert_color:

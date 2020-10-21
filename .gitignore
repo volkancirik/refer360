@@ -6,3 +6,5 @@ models/__pycache__
 py_bottom_up_attention/*
 src/exp*
 data/dumps/*.npy
+../data/refer360images.tar.gz
+notebooks/.ipynb_checkpoints/

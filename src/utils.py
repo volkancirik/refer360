@@ -51,7 +51,9 @@ def rad2degree(lat, lng,
     adj_lng = 0.1
 
   lng = np.degrees(lng + adj_lng)
-  lat = np.degrees(lat - adj_lat)
+  lat = np.degrees(lat + adj_lat)
+
+#  lat = (lat + 180) % 360
   if lat > 180:
     lat = lat - 360
   return lat, lng
@@ -247,8 +249,8 @@ def dump_datasets(splits, image_categories, output_file,
           continue
         datum = {}
 
-        # FIX
-        latitude, longitude = rad2degree(instance['longitude'], instance['latitude'],
+        latitude, longitude = rad2degree(instance['latitude'],
+                                         instance['longitude'],
                                          adjust=True)
 
         datum['annotationid'] = instance['annotationid']
@@ -263,7 +265,7 @@ def dump_datasets(splits, image_categories, output_file,
         if img_category not in cat2loc or img_category not in image_set:
           continue
         img_loc = cat2loc[img_category]
-        datum['pano'] = '../data/sun360_originals/{}/{}/{}'.format(
+        datum['pano'] = '../data/refer360images/{}/{}/{}'.format(
             img_loc, img_category, pano_name)
         datum['img_category'] = img_category
         stats[img_loc] += 1
@@ -376,7 +378,7 @@ def add_overlay(src, trg, coor,
   return src
 
 
-from src.models.finder import Finder
+from models.finder import Finder
 
 
 def get_model(args, vocab, n_actions=5):

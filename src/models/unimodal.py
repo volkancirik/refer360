@@ -4,9 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.models.unet_3 import Unet3
+from models.unet_3 import Unet3
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from src.utils import PositionalEncoding, vectorize_seq
+from utils import PositionalEncoding, vectorize_seq
 
 
 class VisionOnly(nn.Module):
