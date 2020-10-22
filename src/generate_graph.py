@@ -81,7 +81,7 @@ def generate_graph(image_path, predictor, vg_classes,
                    full_h=2276,
                    left_w=128):
   font = cv2.FONT_HERSHEY_SIMPLEX
-  THRESHOLD = 30
+  THRESHOLD = 50
   size = 20
 
   objects = []
@@ -95,7 +95,7 @@ def generate_graph(image_path, predictor, vg_classes,
   objects.append((slat, slng, -1, sx, sy, [sx-1, sy-1, sx+1, sy+1]))
   nodes.append([sx, sy])
 
-  for fov_size in [400, 800, 1200]:
+  for fov_size in [400, 1200]:
 
     cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
     cam.load_img(image_path)
@@ -224,8 +224,8 @@ if __name__ == '__main__':
   cfg = get_cfg()
   cfg.merge_from_file(yaml_file)
   cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
-  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
   predictor = DefaultPredictor(cfg)
