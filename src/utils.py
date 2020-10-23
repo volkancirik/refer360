@@ -10,6 +10,8 @@ import math
 
 import os
 from tqdm import tqdm
+from panoramic_camera import PanoramicCamera as camera
+import cv2
 
 
 class PositionalEncoding(nn.Module):
@@ -57,6 +59,19 @@ def rad2degree(lat, lng,
   if lat > 180:
     lat = lat - 360
   return lat, lng
+
+
+def generate_gt_fovs(image_path, move_list, fov_prefix,
+                     fov_size=400):
+
+  cam = camera(output_image_shape=(fov_size, fov_size))
+  cam.load_img(image_path)
+  for jj, fovs in enumerate(move_list):
+    for kk, fov in enumerate(fovs):
+      lat, lng = fov[0], fov[1]
+      cam.look(lat, lng)
+      fov_img = cam.get_image()
+      cv2.imwrite(fov_prefix + '{}_{}.jpg'.format(jj, kk), fov_img)
 
 
 def get_graph_hops(nodes, actions, image_path,
@@ -137,12 +152,14 @@ def get_graph_hops(nodes, actions, image_path,
   return fov_dict, gt_hops, new_nodes
 
 
-def get_moves(instance, gt_lat, gt_lng, n_sentences):
+def get_moves(instance, gt_lat, gt_lng, n_sentences,
+              verbose=False):
   '''Return ground-truth lat/lng.
   '''
 
   all_moves = []
   flag = False
+
   for action in instance['actions']:
     if len(action['action_list'].split('_')) != n_sentences:
       flag = True
@@ -156,12 +173,21 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences):
 
       gt_moves.append((latitude, longitude))
 
-      dist = ((gt_moves[-1][0] - gt_lat)**2 +
-              (gt_moves[-1][1] - gt_lng)**2) ** 0.5
-      if dist < 1:
-        continue
-      else:
-        all_moves.append(gt_moves)
+    dist = ((gt_moves[-1][0] - gt_lat)**2 +
+            (gt_moves[-1][1] - gt_lng)**2) ** 0.5
+    if dist < 1:
+      continue
+    else:
+      all_moves.append(gt_moves)
+
+  if verbose:
+    for action in instance['actions']:
+      print(action['action_list'].split('_'))
+      print('.')
+    print('_')
+    for moves in all_moves:
+      print(moves)
+      print('.')
   return flag, all_moves
 
 
@@ -213,9 +239,17 @@ def load_datasets(splits, image_categories='all',
 
 
 def dump_datasets(splits, image_categories, output_file,
-                  graph_root=''):
+                  task='continuous_grounding',
+                  task_root=''):
   '''Prepares and dumps dataset to an npy file.
   '''
+
+  if task_root != '' and not os.path.exists(task_root):
+    try:
+      os.makedirs(task_root)
+    except:
+      print('Cannot create folder {}'.format(task_root))
+      quit(1)
 
   banned_turkers = set(['onboarding', 'vcirik'])
   data_list = []
@@ -291,10 +325,12 @@ def dump_datasets(splits, image_categories, output_file,
         datum['refexps'] = sentences
         all_sentences += sent_queue
 
-        if graph_root != '':
-          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
-          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
-          fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
+        if task == 'continuous_grounding':
+          data.append(datum)
+        if task == 'graph_grounding' and task_root != '':
+          node_path = os.path.join(task_root, '{}.npy'.format(pano))
+          node_img = os.path.join(task_root, '{}.jpg'.format(pano))
+          fov_prefix = os.path.join(task_root, '{}.fov'.format(pano))
           nodes = np.load(node_path, allow_pickle=True)[()]
           fovs, graph_hops, new_nodes = get_graph_hops(nodes,
                                                        instance['actions'],
@@ -305,8 +341,10 @@ def dump_datasets(splits, image_categories, output_file,
           datum['nodes'] = new_nodes
           datum['node_img'] = node_img
           datum['fov_prefix'] = fov_prefix
+          data.append(datum)
+        elif task == 'fov_pretraining' and task_root != '':
+          raise NotImplementedError()
 
-        data.append(datum)
     data_list.append(data)
     pbar.close()
 
