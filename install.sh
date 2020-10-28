@@ -1,5 +1,5 @@
-conda create -n refer360 python=3.7 -y
-source activate refer360
+conda create -n refer360test python=3.7 -y
+source activate refer360test
 conda install pytorch=1.4.0 torchvision cudatoolkit=10.1 -c pytorch -y
 conda install -c conda-forge opencv=4.1.0 -y
 conda install tqdm -y
