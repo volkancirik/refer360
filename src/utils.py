@@ -57,6 +57,36 @@ class PositionalEncoding(nn.Module):
     return self.dropout(x)
 
 
+def get_objects(move_x, move_y, nodes,
+                full_w=4552,
+                full_h=2276,
+                fov_size=400):
+
+  directions = ['up', 'down', 'left', 'right']
+  regions = {d: np.zeros((1600, )) for d in directions}
+
+  for node in nodes:
+    x = nodes[node]['x']
+    y = nodes[node]['y']
+
+    if move_x < x:
+      d_left = move_x + full_w - x
+      d_right = x - move_x
+    else:
+      d_left = move_x - x
+      d_right = x + full_w - move_x
+    if move_y < y:
+      d_up = full_h
+      d_down = y - move_y
+    else:
+      d_up = move_y - y
+      d_down = full_h
+    for d, dist in zip(directions, [d_up, d_down, d_left, d_right]):
+      if fov_size/2 <= dist <= fov_size*1.5:
+        regions[d][nodes[node]['obj_id']] = 1
+  return regions
+
+
 def rad2degree(lat, lng,
                adjust=False):
   '''Convert radians to degrees.
@@ -290,7 +320,10 @@ def load_datasets(splits, image_categories='all',
 
 def dump_datasets(splits, image_categories, output_file,
                   task='continuous_grounding',
-                  task_root=''):
+                  task_root='',
+                  graph_root='',
+                  full_w=4552,
+                  full_h=2276):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -385,8 +418,40 @@ def dump_datasets(splits, image_categories, output_file,
           datum['fov_prefix'] = fov_prefix
           data.append(datum)
         elif task == 'fov_pretraining' and task_root != '':
-          raise NotImplementedError()
+          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+          fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
+          nodes = np.load(node_path, allow_pickle=True)[()]
+          fovs, graph_hops, new_nodes = get_graph_hops(nodes,
+                                                       instance['actions'],
+                                                       datum['pano'])
 
+          for moves, move_id in zip(all_moves, move_ids):
+            for mm, move in enumerate(moves):
+              mdatum = {}
+              mdatum['move_id'] = mm
+              mdatum['move_max'] = len(sentences)
+              mdatum['pano'] = datum['pano']
+              mdatum['actionid'] = move_id
+              mdatum['annotationid'] = instance['annotationid']
+
+              lat, lng = move[0], move[1]
+              mx = int(full_w * ((lat + 180)/360.0))
+              my = int(full_h - full_h *
+                       ((lng + 90)/180.0))
+
+              mdatum['latitude'] = move[0]
+              mdatum['longitude'] = move[1]
+              mdatum['x'] = mx
+              mdatum['y'] = my
+
+              mdatum['refexp'] = sentences[mm]
+              fov_prefix = os.path.join(
+                  task_root, '{}.gt_move.'.format(move_id))
+              fov_file = fov_prefix + 'move{}.jpg'.format(mm)
+              mdatum['fov_file'] = fov_file
+              mdatum['regions'] = get_objects(mx, my, nodes)
+              data.append(mdatum)
     data_list.append(data)
     pbar.close()
 
