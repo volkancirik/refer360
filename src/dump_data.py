@@ -12,16 +12,9 @@ $ PYTHONPATH=.. python dump_data.py  ../data/dumps restaurant,shop,expo_showroom
 $ PYTHONPATH=.. python dump_data.py  ../data/dumps street,plaza_courtyard
 '''
 from utils import dump_datasets
-
+from utils import SPLITS
 import sys
 import os
-splits = [
-    'validation.seen',
-    'validation.unseen',
-    'test.seen',
-    'test.unseen',
-    'train',
-]
 if len(sys.argv) < 2 or len(sys.argv) > 5:
   print(usage)
   quit(1)
@@ -43,7 +36,7 @@ if dump_root != '' and not os.path.exists(dump_root):
     quit(1)
 
 print('task | task_root', task, task_root)
-for ii, split_name in enumerate(splits):
+for ii, split_name in enumerate(SPLITS):
   dump_name = os.path.join(
       dump_root, '{}.[{}].imdb.npy'.format(split_name, images))
   dump_datasets([split_name], images, dump_name,

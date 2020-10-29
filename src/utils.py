@@ -13,6 +13,22 @@ from tqdm import tqdm
 from panoramic_camera import PanoramicCamera as camera
 import cv2
 
+CAT2LOC = {'restaurant': 'indoor',
+           'shop': 'indoor',
+           'expo_showroom': 'indoor',
+           'living_room': 'indoor',
+           'bedroom': 'indoor',
+           'street': 'outdoor',
+           'plaza_courtyard': 'outdoor',
+           }
+SPLITS = [
+    'validation.seen',
+    'validation.unseen',
+    'test.seen',
+    'test.unseen',
+    'train',
+]
+
 
 class PositionalEncoding(nn.Module):
   "Implement the PE function."
@@ -61,17 +77,49 @@ def rad2degree(lat, lng,
   return lat, lng
 
 
-def generate_gt_fovs(image_path, move_list, fov_prefix,
-                     fov_size=400):
+def get_det2_features(detections):
+  boxes = []
+  obj_classes = []
+
+  for box, obj_class in zip(detections.pred_boxes, detections.pred_classes):
+    box = box.cpu().detach().numpy()
+    boxes.append(box)
+    obj_class = obj_class.cpu().detach().numpy().tolist()
+    obj_classes.append(obj_class)
+  return boxes, obj_classes
+
+
+def generate_gt_moves(image_path, move_list, move_ids,
+                      fov_root='',
+                      fov_size=400):
 
   cam = camera(output_image_shape=(fov_size, fov_size))
   cam.load_img(image_path)
-  for jj, fovs in enumerate(move_list):
+  for jj, (move_id, fovs) in enumerate(zip(move_ids, move_list)):
     for kk, fov in enumerate(fovs):
       lat, lng = fov[0], fov[1]
       cam.look(lat, lng)
       fov_img = cam.get_image()
-      cv2.imwrite(fov_prefix + '{}_{}.jpg'.format(jj, kk), fov_img)
+      fov_prefix = os.path.join(fov_root, '{}.gt_move.'.format(move_id))
+      fov_file = fov_prefix + 'move{}.jpg'.format(kk)
+      cv2.imwrite(fov_file, fov_img)
+
+
+def generate_fovs(image_path, node_path, fov_prefix,
+                  full_w=4552,
+                  full_h=2276,
+                  fov_size=400):
+
+  cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
+  cam.load_img(image_path)
+  nodes = np.load(node_path,
+                  allow_pickle=True)[()]
+
+  for jj, n in enumerate(nodes.keys()):
+    idx, lat, lng = nodes[n]['id'], nodes[n]['lat'], nodes[n]['lng']
+    cam.look(lat, lng)
+    fov = cam.get_image()
+    cv2.imwrite(fov_prefix + '{}.jpg'.format(idx), fov)
 
 
 def get_graph_hops(nodes, actions, image_path,
@@ -93,7 +141,7 @@ def get_graph_hops(nodes, actions, image_path,
         continue
 
       prev_lat, prev_lng = rlat, rlng
-      lat, lng = rad2degree(rlat, rlng)
+      lat, lng = rad2degree(rlat, rlng, adjust=True)
       fx = int(full_w * ((lat + 180)/360.0))
       fy = int(full_h - full_h *
                ((lng + 90)/180.0))
@@ -158,6 +206,7 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences,
   '''
 
   all_moves = []
+  ids = []
   flag = False
 
   for action in instance['actions']:
@@ -169,7 +218,7 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences,
       move = moves.split('|')[-1]
 
       latitude, longitude = rad2degree(
-          float(move.split(',')[0]), float(move.split(',')[1]))
+          float(move.split(',')[0]), float(move.split(',')[1]), adjust=True)
 
       gt_moves.append((latitude, longitude))
 
@@ -179,6 +228,7 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences,
       continue
     else:
       all_moves.append(gt_moves)
+      ids.append(action['actionid'])
 
   if verbose:
     for action in instance['actions']:
@@ -188,7 +238,7 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences,
     for moves in all_moves:
       print(moves)
       print('.')
-  return flag, all_moves
+  return flag, all_moves, ids
 
 
 def coord_gaussian(x, y, gt_x, gt_y, sigma):
@@ -254,21 +304,13 @@ def dump_datasets(splits, image_categories, output_file,
   banned_turkers = set(['onboarding', 'vcirik'])
   data_list = []
 
-  cat2loc = {'restaurant': 'indoor',
-             'shop': 'indoor',
-             'expo_showroom': 'indoor',
-             'living_room': 'indoor',
-             'bedroom': 'indoor',
-             'street': 'outdoor',
-             'plaza_courtyard': 'outdoor',
-             }
   all_sentences = []
 
-  image_set = set(cat2loc.keys())
+  image_set = set(CAT2LOC.keys())
   if image_categories != 'all':
     image_set = set(image_categories.split(','))
     for image in image_set:
-      if image not in cat2loc:
+      if image not in CAT2LOC:
         raise NotImplementedError(
             'Image Category {} is not in the dataset'.format(image))
   stats = defaultdict(int)
@@ -296,9 +338,9 @@ def dump_datasets(splits, image_categories, output_file,
         pano_name = "_".join(instance['imageurl'].split(
             '/')[-1].split('.')[0].split('_')[:2]) + ".jpg"
 
-        if img_category not in cat2loc or img_category not in image_set:
+        if img_category not in CAT2LOC or img_category not in image_set:
           continue
-        img_loc = cat2loc[img_category]
+        img_loc = CAT2LOC[img_category]
         datum['pano'] = '../data/refer360images/{}/{}/{}'.format(
             img_loc, img_category, pano_name)
         datum['img_category'] = img_category
@@ -312,7 +354,7 @@ def dump_datasets(splits, image_categories, output_file,
           sentences.append(refexp.split())
           sent_queue += [refexp]
 
-        err, all_moves = get_moves(
+        err, all_moves, move_ids = get_moves(
             instance, latitude, longitude, len(sentences))
 
         if err or all_moves == [] or len(all_moves[0]) != len(sentences):

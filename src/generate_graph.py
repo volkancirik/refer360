@@ -11,14 +11,9 @@ import numpy as np
 import os
 from scipy.spatial import Delaunay
 
-cat2loc = {'restaurant': 'indoor',
-           'shop': 'indoor',
-           'expo_showroom': 'indoor',
-           'living_room': 'indoor',
-           'bedroom': 'indoor',
-           'street': 'outdoor',
-           'plaza_courtyard': 'outdoor',
-           }
+from utils import rad2degree
+from utils import get_det2_features
+from utils import generate_fovs
 
 
 def get_triangulation(nodes, left_w, width):
@@ -37,45 +32,6 @@ def get_triangulation(nodes, left_w, width):
   return tri, order2nid, n_nodes
 
 
-def get_det2_features(detections):
-  boxes = []
-  obj_classes = []
-
-  for box, obj_class in zip(detections.pred_boxes, detections.pred_classes):
-    box = box.cpu().detach().numpy()
-    boxes.append(box)
-    obj_class = obj_class.cpu().detach().numpy().tolist()
-    obj_classes.append(obj_class)
-  return boxes, obj_classes
-
-
-def rad2degree(lat, lng):
-
-  lng = np.degrees(lng + 0.1)
-  lat = np.degrees(lat - 0.015)
-  if lat > 180:
-    lat = lat - 360
-  return lat, lng
-
-
-def generate_fovs(image_path, node_path, fov_prefix,
-                  full_w=4552,
-                  full_h=2276,
-                  fov_size=400):
-
-  cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
-  cam.load_img(image_path)
-
-  nodes = np.load(node_path,
-                  allow_pickle=True)[()]
-
-  for jj, n in enumerate(nodes.keys()):
-    idx, lat, lng = nodes[n]['id'], nodes[n]['lat'], nodes[n]['lng']
-    cam.look(lat, lng)
-    fov = cam.get_image()
-    cv2.imwrite(fov_prefix + '{}.jpg'.format(idx), fov)
-
-
 def generate_graph(image_path, predictor, vg_classes,
                    full_w=4552,
                    full_h=2276,
@@ -87,7 +43,8 @@ def generate_graph(image_path, predictor, vg_classes,
   objects = []
   nodes = []
 
-  slat, slng = rad2degree(np.random.uniform(0, 6), np.random.uniform(1, 1.5))
+  slat, slng = rad2degree(np.random.uniform(
+      0, 6), np.random.uniform(1, 1.5), adjust=True)
   sx = int(full_w * ((slat + 180)/360.0))
   sy = int(full_h - full_h *
            ((slng + 90)/180.0))
