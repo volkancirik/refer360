@@ -208,7 +208,7 @@ def run_generate_graph():
   cfg.merge_from_file(yaml_file)
   cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 100
   cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.4
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
   predictor = DefaultPredictor(cfg)
