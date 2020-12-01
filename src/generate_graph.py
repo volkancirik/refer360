@@ -91,8 +91,8 @@ def generate_graph(image_path, predictor, vg_classes,
         for b, o, s in zip(boxes, object_types, det_scores):
           center_x = int((b[0]+b[2])/2)
           center_y = int((b[1]+b[3])/2)
-          o_lat = pixel_map[center_y][center_x][0]
-          o_lng = pixel_map[center_y][center_x][1]
+          o_lat = pixel_map[center_y][center_x][0].item()
+          o_lng = pixel_map[center_y][center_x][1].item()
 
           flag = True
           for r in all_objects:
@@ -103,7 +103,7 @@ def generate_graph(image_path, predictor, vg_classes,
             x = int(full_w * ((o_lat + 180)/360.0))
             y = int(full_h - full_h *
                     ((o_lng + 90)/180.0))
-            all_objects.append((o_lat, o_lng, o, x, y, b))
+            all_objects.append((o_lat, o_lng, o, x, y, b.tolist()))
             all_nodes.append([x, y])
             all_scores.append(s)
 
