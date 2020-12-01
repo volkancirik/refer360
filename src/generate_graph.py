@@ -7,7 +7,8 @@ import cv2
 import sys
 
 
-import panoramic_camera as camera
+#from panoramic_camera_gpu import PanoramicCameraGPU as camera
+from panoramic_camera import PanoramicCamera as camera
 
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
@@ -144,7 +145,7 @@ def generate_graph(image_path, predictor, vg_classes,
 
   for fov_size in [400, 1200]:
 
-    cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
+    cam = camera(output_image_shape=(fov_size, fov_size))
     cam.load_img(image_path)
 
     for lng in range(-45, 90, 45):
