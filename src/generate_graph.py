@@ -1,14 +1,15 @@
 import paths
+
 from collections import defaultdict
 import json
 from operator import itemgetter
 
 import cv2
 import sys
+import torch
 
-
-#from panoramic_camera_gpu import PanoramicCameraGPU as camera
-from panoramic_camera import PanoramicCamera as camera
+from panoramic_camera_gpu import PanoramicCameraGPU as camera
+#from panoramic_camera import PanoramicCamera as camera
 
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
@@ -23,88 +24,8 @@ from utils import get_det2_features
 from utils import generate_fovs
 from utils import generate_grid
 
-
-def generate_grid(full_w=4552,
-                  full_h=2276,
-                  degree=15):
-  left_w = int(full_w * (degree/360)+1)
-
-  dx = full_w * (degree/360)
-  dy = full_h * (degree/180)
-  DISTANCE = (dx ** 2 + dy ** 2) ** 0.5 + 10
-
-  size = 10
-
-  objects = []
-  nodes = []
-
-  for lng in range(-75, 75, degree):
-    for lat in range(0, 360, degree):
-      gt_x = int(full_w * ((lat)/360.0))
-      gt_y = int(full_h - full_h * ((lng + 90)/180.0))
-
-      objects.append((lat, lng, 2, gt_x, gt_y, []))
-      nodes.append([gt_x, gt_y])
-
-  canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
-
-  node_dict = dict()
-  for kk, o in enumerate(objects):
-    o_type, ox, oy = o[2], o[3], o[4]
-    o_label = '<START>'
-    if o_type > 0:
-      o_label = ''
-
-    #cv2.putText(canvas, o_label, (ox+size, oy+size), font, 3, clr, 5)
-    n = {
-        'id': kk,
-        'lat': o[0],
-        'lng': o[1],
-        'obj_label': o_label,
-        'obj_id': o_type,
-        'x': o[3],
-        'y': o[4],
-        'boxes': o[5],
-        'neighbors': []
-    }
-    node_dict[kk] = n
-
-  color = (125, 125, 125)
-
-  n_nodes = len(nodes)
-  order2nid = {i: i for i in range(n_nodes)}
-
-  idx = n_nodes
-  new_nodes = nodes
-  for ii, n in enumerate(nodes):
-    if n[0] < left_w:
-      order2nid[idx] = ii
-      new_nodes.append((n[0]+full_w, n[1]))
-      idx += 1
-
-  for ii, s1 in enumerate(new_nodes):
-    for jj, s2 in enumerate(new_nodes):
-      if ii == jj:
-        continue
-
-      d = ((s1[0]-s2[0])**2 + (s1[1]-s2[1])**2)**0.5
-      if d <= DISTANCE:
-
-        n0 = order2nid[ii]
-        n1 = order2nid[jj]
-
-        node_dict[n0]['neighbors'] += [n1]
-        node_dict[n1]['neighbors'] += [n0]
-
-        cv2.line(canvas, (s1[0], s1[1]),
-                 (s2[0], s2[1]), color, 3, 8)
-  for kk, o in enumerate(objects):
-    o_type, ox, oy = o[2], o[3], o[4]
-
-    canvas[oy-size:oy+size, ox-size:ox+size, 0] = 255.
-    canvas[oy-size:oy+size, ox-size:ox+size, 1:] = 0
-
-  return node_dict, canvas
+torch.backends.cudnn.benchmark = True
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 
 def get_triangulation(nodes, left_w, width):
@@ -148,10 +69,11 @@ def generate_graph(image_path, predictor, vg_classes,
     cam = camera(output_image_shape=(fov_size, fov_size))
     cam.load_img(image_path)
 
-    for lng in range(-45, 90, 45):
-      for lat in range(-180, 180, 45):
+    for lng in range(-45, 90, 30):
+      for lat in range(-180, 180, 30):
         cam.look(lat, lng)
         pixel_map = cam.get_map()
+
         img = cam.get_image()
 
         # cv2.imshow("", img)
@@ -179,6 +101,7 @@ def generate_graph(image_path, predictor, vg_classes,
             objects.append((o_lat, o_lng, o, x, y, b))
             nodes.append([x, y])
 
+  print('# of detected objects', len(nodes))
   tri, order2nid, n_nodes = get_triangulation(nodes, left_w, full_w)
   canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
 
@@ -271,9 +194,9 @@ def run_generate_graph():
   yaml_file = '../py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
   cfg = get_cfg()
   cfg.merge_from_file(yaml_file)
-  cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
-  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
+  cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 100
+  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
   predictor = DefaultPredictor(cfg)

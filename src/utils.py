@@ -11,7 +11,10 @@ import math
 
 import os
 from tqdm import tqdm
-from panoramic_camera import PanoramicCamera as camera
+
+from panoramic_camera_gpu import PanoramicCameraGPU as camera
+#from panoramic_camera import PanoramicCamera as camera
+
 
 import cv2
 
@@ -364,6 +367,7 @@ def generate_gt_moves(image_path, move_list, move_ids,
     for kk, fov in enumerate(fovs):
       lat, lng = fov[0], fov[1]
       cam.look(lat, lng)
+
       fov_img = cam.get_image()
       fov_prefix = os.path.join(fov_root, '{}.gt_move.'.format(move_id))
       fov_file = fov_prefix + 'move{}.jpg'.format(kk)
@@ -383,6 +387,7 @@ def generate_fovs(image_path, node_path, fov_prefix,
   for jj, n in enumerate(nodes.keys()):
     idx, lat, lng = nodes[n]['id'], nodes[n]['lat'], nodes[n]['lng']
     cam.look(lat, lng)
+
     fov = cam.get_image()
     cv2.imwrite(fov_prefix + '{}.jpg'.format(idx), fov)
 

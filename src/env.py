@@ -45,7 +45,8 @@ class EnvBatch():
     shape = (image_h, image_w)
     # set # of cameras batch_size
     self.cameras = [camera(fov=fov,
-                           output_image_shape=shape) for ii in range(self.batch_size)]
+                           output_image_shape=shape,
+                           use_tensor_image=True) for ii in range(self.batch_size)]
     # keep track of which cameras are done
     self._done = [False for ii in range(self.batch_size)]
 
@@ -259,11 +260,12 @@ class Refer360Batch():
       datum = self.batch[ii]
 
       # Check dimension order
+      perspective_image = state[0].permute(2, 0, 1)
       # perspective_image = state[0].cpu().numpy().astype('uint8')
       # pil_img = Image.fromarray(perspective_image)
       # img_tensor = self.preprocess(pil_img)
       # im_stack.append(img_tensor.unsqueeze(0))
-      perspective_image = state[0].permute(2, 1, 0)
+
       im_stack.append(perspective_image.unsqueeze(0))
 
       if self.use_sentences:

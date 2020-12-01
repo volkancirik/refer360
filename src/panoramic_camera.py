@@ -20,7 +20,7 @@ class PanoramicCamera:
     self.img_path = ''
     self._img = None
 
-  def load_img(self, img_path, gt_loc=None, convert_color=True):
+  def load_img(self, img_path, gt_loc=None, convert_color=False):
     """Load image for the camera.
     """
 

@@ -5,6 +5,7 @@ adapted from here :  https://github.com/fuenwang/Equirec2Perspec/blob/master/Equ
 import cv2
 import numpy as np
 import torch
+from torchvision.transforms import ToPILImage
 
 
 def deg2rad(theta):
@@ -37,12 +38,15 @@ def rotation_matrix(axis, theta):
 
 
 class PanoramicCameraGPU:
-  def __init__(self, fov=90, output_image_shape=(400, 400)):
+  def __init__(self, fov=90,
+               output_image_shape=(400, 400),
+               use_tensor_image=False):
     """Init the camera.
     """
     self.fov = fov
     self.output_image_h = output_image_shape[0]
     self.output_image_w = output_image_shape[1]
+    self.use_tensor_image = use_tensor_image
 
     self.lng_map = None
     self.lat_map = None
@@ -50,7 +54,7 @@ class PanoramicCameraGPU:
     self.img_path = ''
     self._img = None
 
-  def load_img(self, img_path, gt_loc=None, convert_color=True):
+  def load_img(self, img_path, gt_loc=None, convert_color=False):
     """Load image for the camera.
     """
 
@@ -98,7 +102,12 @@ class PanoramicCameraGPU:
                                             align_corners=True,
                                             padding_mode='border').squeeze(0).permute(1, 2, 0)
 
-    return image
+    if self.use_tensor_image:
+      return image
+
+    image = image.permute(2, 0, 1).cpu()
+    img = ToPILImage()(image)
+    return np.array(img)
 
   def get_map(self):
     lat_map = (self.lat_map / self._width) * 360.0 - 180.0
