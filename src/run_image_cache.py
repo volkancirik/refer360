@@ -10,14 +10,16 @@ from PIL import Image
 
 def compute_image_caches(splits,
                          task='fov_pretraining',
-                         data_root='../data/fov_pretraining',
+                         data_root='fov_pretraining_table,chair,door,television,car_grid',
                          images='all',
                          extension='.jpg'):
 
   if task == 'fov_pretraining':
-    files, _, _ = load_fovpretraining_splits(splits,
-                                             data_root=data_root,
-                                             images=images)
+    out = load_fovpretraining_splits(splits,
+                                     'cartesian',
+                                     data_root=data_root,
+                                     images=images)
+    files = out[1]
   else:
     raise NotImplementedError()
 
@@ -31,7 +33,8 @@ def compute_image_caches(splits,
       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
   ])
 
-  pbar = tqdm(files)
+  print('>>>', len(files), len(set(files)))
+  pbar = tqdm(list(set(files)))
   for filename in pbar:
     img_feat_path = filename.replace(extension, '.feat.npy')
 
@@ -53,5 +56,5 @@ if __name__ == '__main__':
   from utils import SPLITS
   compute_image_caches(SPLITS,
                        task='fov_pretraining',
-                       data_root='../data/fov_pretraining',
+                       data_root='../data/fov_pretraining_table,chair,door,television,car_grid',
                        images='all')

@@ -18,6 +18,9 @@ from collections import defaultdict
 
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
+torch.backends.cudnn.benchmark = True
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#device = torch.device('cuda')
 
 
 def select_action(model, state, done_list,
@@ -40,9 +43,9 @@ def select_action(model, state, done_list,
   sampling_prob = F.softmax(sampling_logits, dim=-1)
   m = Categorical(sampling_prob)
   if greedy:
-    navigate = m.sample()
-  else:
     _, navigate = torch.max(sampling_prob, 1)
+  else:
+    navigate = m.sample()
 
   maxes = loc_pred.view(loc_pred.size(0), -1).argmax(1).view(-1, 1)
   indices = torch.cat((maxes // loc_pred.size(2), maxes %
@@ -101,7 +104,7 @@ def calculate_actor_critic(saved_actions, rewards, gamma=0.99):
     std = 1
   else:
     std = returns.std()
-  # returns = (returns - returns.mean()) / (std + eps)
+  #returns = (returns - returns.mean()) / (std + eps)
 
   policy_loss = 0.0
   value_loss = 0.0
@@ -174,7 +177,7 @@ def eval_epoch(ref360env, model, optimizer, args,
   else:
     pbar = range(n_updates)
 
-  for _ in pbar:
+  for bid in pbar:
     done_list = [False]*batch_size
 
     batch_metrics = defaultdict(list)
@@ -224,8 +227,8 @@ def eval_epoch(ref360env, model, optimizer, args,
           pixel_map = o['pixel_map']
 
           pred_x, pred_y = prediction.cpu().numpy().tolist()
-          pred_lng = pixel_map[pred_y][pred_x][0]
-          pred_lat = pixel_map[pred_y][pred_x][1]
+          pred_lat = pixel_map[pred_y][pred_x][0]
+          pred_lng = pixel_map[pred_y][pred_x][1]
           history[o['id']]['pred_x'] = int(pred_x)
           history[o['id']]['pred_y'] = int(pred_y)
 
@@ -233,8 +236,8 @@ def eval_epoch(ref360env, model, optimizer, args,
           history[o['id']]['pred_lng'] = float(pred_lng)
 
         else:
-          lng_diff = ref360env.env.__look__[act][0]
-          lat_diff = ref360env.env.__look__[act][1]
+          lat_diff = ref360env.env.__look__[act][0]
+          lng_diff = ref360env.env.__look__[act][1]
 
         history[o['id']]['lng_diffs'].append(lng_diff)
         history[o['id']]['lat_diffs'].append(lat_diff)
@@ -248,7 +251,6 @@ def eval_epoch(ref360env, model, optimizer, args,
     for kk in range(batch_size):
       if kk not in done_set:
         # batch_metrics['reward'][kk] = -10000.0  # ref360env.UNFINISHED_REWARD
-        # model.rewards[kk][-1] = -10000.0
         done_list[kk] = True
 
     epoch_mean = defaultdict()
@@ -271,25 +273,27 @@ def eval_epoch(ref360env, model, optimizer, args,
       epoch_losses[loss_type].append(losses[loss_type])
 
     epoch_mean_loss = np.mean(epoch_losses['loss'])
-    log_loss = 'E-Mean Loss {:3.2f} B-Loss {:3.2f}'.format(
+    log_loss = 'E-Loss {:3.2f} B-Loss {:3.2f}'.format(
         epoch_mean_loss, losses['loss'])
 
     logs = dict()
     log_list = [log_loss]
-    for metric in epoch_mean:
-      logs[metric] = '{} E: {:2.3f} B: {:2.3f}'.format(metric,
+    for metric in sorted(epoch_mean):
+      logs[metric] = '{} E: {:3.3f} B: {:3.3f}'.format(metric,
                                                        epoch_mean[metric],
                                                        epoch_metrics[metric][-1])
       log_list += [logs[metric]]
-    log_string = ' | '.join(log_list)
+    log_string = '|'.join(log_list)
 
     loss_group = {loss_type: np.mean(
         epoch_losses[loss_type]) for loss_type in epoch_losses}
 
+    log_split_batch = log_split + ' B{:4d}|{:4d}'.format(bid+1, n_updates)
+    log_final = ' '.join([log_split_batch, log_string])
     if verbose:
-      pbar.set_description(' '.join([log_split, log_string]))
+      pbar.set_description(log_final)
     else:
-      print(' '.join([log_split, log_string]))
+      print(log_final)
     # add stats to tensorboard
     for loss_type in losses:
       writer.add_scalar('{}_{}'.format(

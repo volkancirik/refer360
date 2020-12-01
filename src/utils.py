@@ -5,13 +5,30 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from collections import defaultdict
 import math
 
 import os
 from tqdm import tqdm
 from panoramic_camera import PanoramicCamera as camera
+
 import cv2
+
+import io
+import PIL.Image
+from matplotlib.pyplot import cm
+import matplotlib.pyplot as plt
+from torchvision.transforms import ToTensor
+
+import csv
+import base64
+import time
+import sys
+csv.field_size_limit(sys.maxsize)
+FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
+              "attrs_id", "attrs_conf", "num_boxes", "boxes", "features"]
+
 
 CAT2LOC = {'restaurant': 'indoor',
            'shop': 'indoor',
@@ -28,6 +45,25 @@ SPLITS = [
     'test.unseen',
     'train',
 ]
+DIRECTIONS = {
+    'canonical': ['up', 'down', 'left', 'right'],
+    'cartesian': ['vertical', 'horizontal'],
+    'lup': ['lateral', 'up', 'down'],
+    'canonical_proximity': ['close_up', 'close_down', 'close_left', 'close_right',
+                            'far_up', 'far_down', 'far_left', 'far_right']
+}
+FOV_EMB_SIZE = 128
+
+
+def weights_init_uniform_rule(m):
+  classname = m.__class__.__name__
+  # for every Linear layer in a model..
+  if classname.find('Linear') != -1:
+    # get the number of the inputs
+    n = m.in_features
+    y = 1.0/np.sqrt(n)
+    m.weight.data.uniform_(-y, y)
+    m.bias.data.fill_(0)
 
 
 class PositionalEncoding(nn.Module):
@@ -51,24 +87,117 @@ class PositionalEncoding(nn.Module):
     self.register_buffer('pe', pe)
 
   def forward(self, x):
-    pos_info = torch.tensor(self.pe[:, : x.size(1)],
-                            requires_grad=False)
+    pos_info = self.pe[:, : x.size(1)].clone().detach().requires_grad_(True)
     x = x + pos_info
     return self.dropout(x)
 
 
-def get_objects(move_x, move_y, nodes,
+def load_obj_tsv(fname, topk=None):
+  """Source: https://github.com/airsplay/lxmert/blob/f65a390a9fd3130ef038b3cd42fe740190d1c9d2/src/utils.py#L16
+  Load object features from tsv file.
+
+    :param fname: The path to the tsv file.
+    :param topk: Only load features for top K images (lines) in the tsv file.
+        Will load all the features if topk is either -1 or None.
+    :return: A list of image object features where each feature is a dict.
+        See FILENAMES above for the keys in the feature dict.
+    """
+  data = []
+  start_time = time.time()
+  print("Start to load Faster-RCNN detected objects from %s" % fname)
+  with open(fname) as f:
+    reader = csv.DictReader(f, FIELDNAMES, delimiter="\t")
+    for i, item in enumerate(reader):
+
+      for key in ['img_h', 'img_w', 'num_boxes']:
+        item[key] = int(item[key])
+
+      boxes = item['num_boxes']
+      decode_config = [
+          ('objects_id', (boxes, ), np.int64),
+          ('objects_conf', (boxes, ), np.float32),
+          ('attrs_id', (boxes, ), np.int64),
+          ('attrs_conf', (boxes, ), np.float32),
+          ('boxes', (boxes, 4), np.float32),
+          ('features', (boxes, -1), np.float32),
+      ]
+      for key, shape, dtype in decode_config:
+        item[key] = np.frombuffer(base64.b64decode(item[key]), dtype=dtype)
+        item[key] = item[key].reshape(shape)
+        item[key].setflags(write=False)
+
+      data.append(item)
+      if topk is not None and len(data) == topk:
+        break
+  elapsed_time = time.time() - start_time
+  print("Loaded %d images in file %s in %d seconds." %
+        (len(data), fname, elapsed_time))
+  return data
+
+
+def build_fov_embedding(latitude, longitude):
+  """
+  Position embedding:
+  latitude 64D + longitude 64D
+  1) latitude: [sin(latitude) for _ in range(1, 33)] +
+  [cos(latitude) for _ in range(1, 33)]
+  2) longitude: [sin(longitude) for _ in range(1, 33)] +
+  [cos(longitude) for _ in range(1, 33)]
+  """
+  quarter = int(FOV_EMB_SIZE / 4)
+  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).cuda()
+
+  embedding[:,  0:quarter*1] = torch.sin(latitude)
+  embedding[:, quarter*1:quarter*2] = torch.cos(latitude)
+  embedding[:, quarter*2:quarter*3] = torch.sin(longitude)
+  embedding[:, quarter*3:quarter*4] = torch.cos(longitude)
+
+  return embedding
+
+
+def get_objects_classes(obj_dict_file,
+                        data_path='../py_bottom_up_attention/demo/data/genome/1600-400-20'):
+
+  vg_classes = []
+  with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
+    for object in f.readlines():
+      vg_classes.append(object.split(',')[0].lower().strip())
+
+  vg2idx = json.load(
+      open(obj_dict_file, 'r'))['vg2idx']
+  idx2vg = json.load(
+      open(obj_dict_file, 'r'))['idx2vg']
+
+  obj_classes = ['']*len(idx2vg)
+  for idx in idx2vg:
+    obj_classes[int(idx)] = vg_classes[idx2vg[idx]]
+  return vg2idx, idx2vg, obj_classes
+
+
+def get_objects(move_x, move_y, nodes, vg2idx,
                 full_w=4552,
                 full_h=2276,
                 fov_size=400):
 
-  directions = ['up', 'down', 'left', 'right']
-  regions = {d: np.zeros((1600, )) for d in directions}
+  n_objects = len(vg2idx)
+
+  all_regions = {}
+  all_obj_list = {}
+  for dir_method in DIRECTIONS:
+    directions = DIRECTIONS[dir_method]
+    regions = {d: np.zeros((n_objects, )) for d in directions}
+    obj_list = {d: [] for d in directions}
+
+    all_regions[dir_method] = regions
+    all_obj_list[dir_method] = obj_list
 
   for node in nodes:
     x = nodes[node]['x']
     y = nodes[node]['y']
+    vg_obj_id = str(nodes[node]['obj_id'])
 
+    if vg_obj_id not in vg2idx:
+      continue
     if move_x < x:
       d_left = move_x + full_w - x
       d_right = x - move_x
@@ -81,10 +210,33 @@ def get_objects(move_x, move_y, nodes,
     else:
       d_up = move_y - y
       d_down = full_h
-    for d, dist in zip(directions, [d_up, d_down, d_left, d_right]):
-      if fov_size/2 <= dist <= fov_size*1.5:
-        regions[d][nodes[node]['obj_id']] = 1
-  return regions
+    for d, dist in zip(DIRECTIONS['canonical'], [d_up, d_down, d_left, d_right]):
+      if fov_size/2 <= dist <= fov_size*1.5 and vg_obj_id in vg2idx:
+
+        obj_id = vg2idx[vg_obj_id]
+        all_regions['canonical'][d][obj_id] = 1
+        all_obj_list['canonical'][d].append(obj_id)
+
+    for d, distances in zip(DIRECTIONS['cartesian'], [[d_up, d_down], [d_left, d_right]]):
+      if (fov_size/2 <= distances[0] <= fov_size*1.5 or fov_size/2 <= distances[1] <= fov_size*1.5) and vg_obj_id in vg2idx:
+        obj_id = vg2idx[vg_obj_id]
+        all_regions['cartesian'][d][obj_id] = 1
+        all_obj_list['cartesian'][d].append(obj_id)
+
+    for d, distances in zip(DIRECTIONS['lup'], [[d_left, d_right], [d_up, d_up], [d_down, d_down]]):
+      if (fov_size/2 <= distances[0] <= fov_size*1.5 or fov_size/2 <= distances[1] <= fov_size*1.5) and vg_obj_id in vg2idx:
+        obj_id = vg2idx[vg_obj_id]
+        all_regions['lup'][d][obj_id] = 1
+        all_obj_list['lup'][d].append(obj_id)
+
+    for d, dist, (low, high) in zip(DIRECTIONS['canonical_proximity'], [d_up, d_down, d_left, d_right, d_up, d_down, d_left, d_right], [(0.5, 1.5), (0.5, 1.5), (0.5, 1.5), (0.5, 1.5), (1.5, 2.5), (1.5, 2.5), (1.5, 2.5), (1.5, 2.5)]):
+      if fov_size * low <= dist <= fov_size * high and vg_obj_id in vg2idx:
+
+        obj_id = vg2idx[vg_obj_id]
+        all_regions['canonical_proximity'][d][obj_id] = 1
+        all_obj_list['canonical_proximity'][d].append(obj_id)
+
+  return all_regions, all_obj_list
 
 
 def rad2degree(lat, lng,
@@ -119,6 +271,89 @@ def get_det2_features(detections):
   return boxes, obj_classes
 
 
+def generate_grid(full_w=4552,
+                  full_h=2276,
+                  degree=30):
+  left_w = int(full_w * (degree/360)+1)
+
+  dx = full_w * (degree/360)
+  dy = full_h * (degree/180)
+  DISTANCE = (dx ** 2 + dy ** 2) ** 0.5 + 10
+
+  size = 10
+
+  objects = []
+  nodes = []
+
+  for lng in range(-75, 75, degree):
+    for lat in range(0, 360, degree):
+      gt_x = int(full_w * ((lat)/360.0))
+      gt_y = int(full_h - full_h * ((lng + 90)/180.0))
+
+      objects.append((lat, lng, 2, gt_x, gt_y, []))
+      nodes.append([gt_x, gt_y])
+
+  canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
+
+  node_dict = dict()
+  for kk, o in enumerate(objects):
+    o_type, ox, oy = o[2], o[3], o[4]
+    o_label = '<START>'
+    if o_type > 0:
+      o_label = ''
+
+    #cv2.putText(canvas, o_label, (ox+size, oy+size), font, 3, clr, 5)
+    n = {
+        'id': kk,
+        'lat': o[0],
+        'lng': o[1],
+        'obj_label': o_label,
+        'obj_id': o_type,
+        'x': o[3],
+        'y': o[4],
+        'boxes': o[5],
+        'neighbors': []
+    }
+    node_dict[kk] = n
+
+  color = (125, 125, 125)
+
+  n_nodes = len(nodes)
+  order2nid = {i: i for i in range(n_nodes)}
+
+  idx = n_nodes
+  new_nodes = nodes
+  for ii, n in enumerate(nodes):
+    if n[0] < left_w:
+      order2nid[idx] = ii
+      new_nodes.append((n[0]+full_w, n[1]))
+      idx += 1
+
+  for ii, s1 in enumerate(new_nodes):
+    for jj, s2 in enumerate(new_nodes):
+      if ii == jj:
+        continue
+
+      d = ((s1[0]-s2[0])**2 + (s1[1]-s2[1])**2)**0.5
+      if d <= DISTANCE:
+
+        n0 = order2nid[ii]
+        n1 = order2nid[jj]
+
+        node_dict[n0]['neighbors'] += [n1]
+        node_dict[n1]['neighbors'] += [n0]
+
+        cv2.line(canvas, (s1[0], s1[1]),
+                 (s2[0], s2[1]), color, 3, 8)
+  for kk, o in enumerate(objects):
+    o_type, ox, oy = o[2], o[3], o[4]
+
+    canvas[oy-size:oy+size, ox-size:ox+size, 0] = 255.
+    canvas[oy-size:oy+size, ox-size:ox+size, 1:] = 0
+
+  return node_dict, canvas
+
+
 def generate_gt_moves(image_path, move_list, move_ids,
                       fov_root='',
                       fov_size=400):
@@ -140,7 +375,7 @@ def generate_fovs(image_path, node_path, fov_prefix,
                   full_h=2276,
                   fov_size=400):
 
-  cam = camera.PanoramicCamera(output_image_shape=(fov_size, fov_size))
+  cam = camera(output_image_shape=(fov_size, fov_size))
   cam.load_img(image_path)
   nodes = np.load(node_path,
                   allow_pickle=True)[()]
@@ -323,7 +558,9 @@ def dump_datasets(splits, image_categories, output_file,
                   task_root='',
                   graph_root='',
                   full_w=4552,
-                  full_h=2276):
+                  full_h=2276,
+                  obj_dict_file='../data/vg_object_dictionaries.all.json',
+                  degree=30):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -333,6 +570,7 @@ def dump_datasets(splits, image_categories, output_file,
     except:
       print('Cannot create folder {}'.format(task_root))
       quit(1)
+  vg2idx = json.load(open(obj_dict_file, 'r'))['vg2idx']
 
   banned_turkers = set(['onboarding', 'vcirik'])
   data_list = []
@@ -450,7 +688,57 @@ def dump_datasets(splits, image_categories, output_file,
                   task_root, '{}.gt_move.'.format(move_id))
               fov_file = fov_prefix + 'move{}.jpg'.format(mm)
               mdatum['fov_file'] = fov_file
-              mdatum['regions'] = get_objects(mx, my, nodes)
+              regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+              mdatum['regions'] = regions
+              mdatum['obj_list'] = obj_list
+
+              directions = [len(obj_list['canonical'][d]) > 0 for d in [
+                  'up', 'down', 'left', 'right']]
+
+              if any(directions):
+                data.append(mdatum)
+        elif task == 'fov_pretraining_grid' and task_root != '':
+          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+          fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
+          nodes = np.load(node_path, allow_pickle=True)[()]
+          fovs, graph_hops, new_nodes = get_graph_hops(nodes,
+                                                       instance['actions'],
+                                                       datum['pano'])
+          grid_nodes, _ = generate_grid(degree=degree)
+
+          for n in grid_nodes:
+            node = grid_nodes[n]
+
+            mdatum = {}
+            fov_id = node['id']
+            mdatum['fov_id'] = fov_id
+
+            mdatum['move_max'] = len(sentences)
+            mdatum['pano'] = datum['pano']
+            # mdatum['actionid'] = move_id
+            mdatum['annotationid'] = instance['annotationid']
+
+            lat, lng = node['lat'], node['lng']
+            mx, my = node['x'], node['y']
+            mdatum['latitude'] = lat
+            mdatum['longitude'] = lng
+            mdatum['x'] = mx
+            mdatum['y'] = my
+
+            mdatum['refexps'] = sentences
+            fov_file = os.path.join(
+                task_root, '{}.fov{}.jpg'.format(pano, fov_id))
+
+            mdatum['fov_file'] = fov_file
+            regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+            mdatum['regions'] = regions
+            mdatum['obj_list'] = obj_list
+
+            directions = [len(obj_list['canonical'][d]) > 0 for d in [
+                'up', 'down', 'left', 'right']]
+
+            if any(directions):
               data.append(mdatum)
     data_list.append(data)
     pbar.close()
@@ -535,3 +823,137 @@ def get_model(args, vocab, n_actions=5):
     args.n_emb = 512
 
   return Finder(args, vocab, n_actions).cuda()
+
+
+class F1_Loss(nn.Module):
+  '''Calculate F1 score. Can work with gpu tensors
+
+  The original implmentation is written by Michal Haltuf on Kaggle.
+
+  Returns
+  -------
+  torch.Tensor
+      `ndim` == 1. epsilon <= val <= 1
+
+  Reference
+  ---------
+  - https://www.kaggle.com/rejpalcz/best-loss-function-for-f1-score-metric
+  # sklearn.metrics.f1_score
+  - https://scikit-learn.org/stable/modules/generated/sklearn.metrics.f1_score.html
+  - https://discuss.pytorch.org/t/calculating-precision-recall-and-f1-score-in-case-of-multi-label-classification/28265/6
+  - http://www.ryanzhang.info/python/writing-your-own-loss-function-module-for-pytorch/
+  '''
+
+  def __init__(self, epsilon=1e-7,
+               num_classes=2):
+    super().__init__()
+    self.epsilon = epsilon
+    self.num_classes = num_classes
+
+  def forward(self, y_pred, y_true,):
+    assert y_pred.ndim == 2
+    assert y_true.ndim == 1
+    y_true = F.one_hot(y_true, self.num_classes).to(torch.float32)
+    y_pred = F.softmax(y_pred, dim=1)
+
+    tp = (y_true * y_pred).sum(dim=0).to(torch.float32)
+    # tn = ((1 - y_true) * (1 - y_pred)).sum(dim=0).to(torch.float32)
+    fp = ((1 - y_true) * y_pred).sum(dim=0).to(torch.float32)
+    fn = (y_true * (1 - y_pred)).sum(dim=0).to(torch.float32)
+
+    precision = tp / (tp + fp + self.epsilon)
+    recall = tp / (tp + fn + self.epsilon)
+
+    f1 = 2 * (precision*recall) / (precision + recall + self.epsilon)
+    f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
+    return 1 - f1.mean()
+
+
+class F1_Binary_Loss(nn.Module):
+  '''F1 for binary classification.
+  '''
+
+  def __init__(self, epsilon=1e-7):
+    super().__init__()
+    self.epsilon = epsilon
+
+  def forward(self, y_pred, y_true):
+    assert y_pred.ndim == 2
+    assert y_true.ndim == 2
+
+    y_true = y_true.to(torch.float32)
+    y_pred = y_pred.to(torch.float32)
+
+    tp = (y_true * y_pred).sum(dim=0).to(torch.float32)
+    tn = ((1 - y_true) * (1 - y_pred)).sum(dim=0).to(torch.float32)
+    fp = ((1 - y_true) * y_pred).sum(dim=0).to(torch.float32)
+    fn = (y_true * (1 - y_pred)).sum(dim=0).to(torch.float32)
+
+    precision = tp / (tp + fp + self.epsilon)
+    recall = tp / (tp + fn + self.epsilon)
+
+    f1 = 2 * (precision*recall) / (precision + recall + self.epsilon)
+    f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
+
+    return f1.mean()
+
+
+def get_confusion_matrix_image(labels, matrix, title='Title', tight=False, cmap=cm.copper):
+
+  fig, ax = plt.subplots()
+  _ = ax.imshow(matrix, cmap=cmap)
+
+  ax.set_xticks(np.arange(len(labels)))
+  ax.set_yticks(np.arange(len(labels)))
+  ax.set_xticklabels(labels)
+  ax.set_yticklabels(labels)
+
+  # Rotate the tick labels and set their alignment.
+  plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+           rotation_mode="anchor")
+
+  # Loop over data dimensions and create text annotations.
+
+  for i in range(len(labels)):
+    for j in range(len(labels)):
+
+      _ = ax.text(j, i, '{:0.2f}'.format(matrix[i, j]),
+                  ha="center", va="center", color="w")
+
+  ax.set_title(title)
+  if tight:
+    fig.tight_layout()
+  buf = io.BytesIO()
+  plt.savefig(buf, format='jpeg')
+  buf.seek(0)
+  image = PIL.Image.open(buf)
+  image = ToTensor()(image)
+  plt.close('all')
+  return image
+
+
+def compute_precision_with_logits(logits, labels_vector,
+                                  precision_k=1,
+                                  mask=None):
+  labels = torch.zeros(*logits.size()).cuda()
+  for ll in range(logits.size(0)):
+    labels[ll, :].scatter_(0, labels_vector[ll], 1)
+
+  adjust_score = False
+  if type(mask) != type(None):
+    labels = labels * mask.unsqueeze(0).expand(labels.size())
+    adjust_score = True
+  one_hots = torch.zeros(*labels.size()).cuda()
+  logits = torch.sort(logits, 1, descending=True)[1]
+  one_hots.scatter_(1, logits[:, :precision_k], 1)
+
+  batch_size = logits.size(0)
+  scores = ((one_hots * labels).sum(1) >= 1).float().sum() / batch_size
+  if adjust_score:
+    valid_rows = (labels.sum(1) > 0).sum(0)
+    if valid_rows == 0:
+      scores = torch.tensor(1.0).cuda()
+    else:
+      hit = (scores * batch_size)
+      scores = hit / valid_rows
+  return scores

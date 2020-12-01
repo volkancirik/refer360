@@ -34,6 +34,8 @@ class RNN(nn.Module):
     x = x.t().contiguous()
 
     # prepare all the indices for sorting
+    #seq_lengths = seq_lengths.cpu().numpy()
+
     sorted_indices = np.argsort(-seq_lengths)  # descending order
     unsort_indices = np.argsort(sorted_indices)
 
@@ -42,7 +44,14 @@ class RNN(nn.Module):
 
     sorted_seq_lengths = seq_lengths[sorted_indices]
     sorted_embed = embed[:, sorted_indices]  # sort by sequence lengths
-    embed_packed = pack_padded_sequence(sorted_embed, sorted_seq_lengths)
+
+    torch.set_default_tensor_type(torch.FloatTensor)
+    lengths = torch.as_tensor(
+        sorted_seq_lengths, dtype=torch.int64, device='cpu')
+
+    embed_packed = pack_padded_sequence(
+        sorted_embed, lengths)
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     outputs = []
     out_packed = embed_packed

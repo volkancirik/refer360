@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from models.unet_3 import Unet3
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from utils import PositionalEncoding, vectorize_seq
+from utils import PositionalEncoding, vectorize_seq, FOV_EMB_SIZE, build_fov_embedding
 
 
 class VisionOnly(nn.Module):
@@ -14,25 +14,49 @@ class VisionOnly(nn.Module):
   Vision only unimodal baseline
   """
 
-  def __init__(self, batch_size, n_actions=5):
+  def __init__(self, batch_size,
+               hidden_size=128,
+               n_actions=5,
+               w=400,
+               h=400,
+               ch=1,
+               n_objects=0,
+               use_queries=False,
+               fov_emb_mode=2):
     super(VisionOnly, self).__init__()
 
-    self.unet = Unet3(3, 1, 128).cuda().eval()
+    self.unet = Unet3(512, 4, hidden_size).cuda().eval()
 
     # actor's layer
     self.n_actions = n_actions
-    self.action_head0 = nn.Linear(400*400, 512)
-    self.action_head1 = nn.Linear(512, 256)
-    self.action_head2 = nn.Linear(256, 128)
-    self.action_head3 = nn.Linear(128, n_actions)
+    self.w = w
+    self.h = h
+    img_size = w*h*ch
+    self.img_size = img_size
+    self.bn = nn.BatchNorm2d(4)
+    self.action_head0 = nn.Linear(img_size, hidden_size * 4)
+    self.action_head1 = nn.Linear(hidden_size*4, hidden_size*2)
+    self.action_head2 = nn.Linear(hidden_size*2, hidden_size)
+    self.action_head3 = nn.Linear(hidden_size, n_actions)
 
     # critic's layer
-    self.value_head = nn.Linear(400*400, 1)
+    self.value_head = nn.Linear(img_size, 1)
 
     # action & reward buffer
     self.rewards = [[] for bb in range(batch_size)]
     self.saved_actions = [[] for bb in range(batch_size)]
     self.batch_size = batch_size
+    self.use_queries = use_queries
+    self.n_objects = n_objects
+    if self.use_queries:
+      self.obj_emb = nn.Embedding(self.n_objects, hidden_size * 4)
+
+    self.fov_emb_mode = fov_emb_mode
+
+    if self.fov_emb_mode > 0:
+      self.fov2logit = nn.Linear(FOV_EMB_SIZE, hidden_size)
+      self.fov2logit.bias.data.fill_(0)
+    self.dropout = nn.Dropout(p=0.1)
 
   def forward(self, state):
     """
@@ -40,17 +64,38 @@ class VisionOnly(nn.Module):
     """
     x = state['im_batch']
     pred = self.unet(x).squeeze(1)
+    #bn_pred = self.bn(pred)
 
-    # resized_pred = self.resnet(x).squeeze(2).squeeze(2)
-    resized_pred = pred.reshape(pred.size(0), 400*400)
+    resized_pred = pred.reshape(pred.size(0), self.img_size)
+    logits1 = self.dropout(F.relu(self.action_head0(resized_pred)))
+    if self.use_queries:
+      emb = self.dropout(self.obj_emb(state['queries']).squeeze(1))
+      logits1 = logits1 + emb
 
-    logits1 = F.relu(self.action_head0(resized_pred))
-    logits2 = F.relu(self.action_head1(logits1))
-    logits3 = F.relu(self.action_head2(logits2))
+    logits2 = self.dropout(F.relu(self.action_head1(logits1)))
+    logits3 = self.dropout(F.relu(self.action_head2(logits2)))
+
+    if self.fov_emb_mode == 0:
+      pass
+    elif self.fov_emb_mode == 1:
+      fov_emb = build_fov_embedding(state['latitude'], state['longitude'])
+      logits3 = self.fov2logit(fov_emb)
+    elif self.fov_emb_mode == 2:
+      fov_emb = build_fov_embedding(state['latitude'], state['longitude'])
+      logits3 = self.fov2logit(fov_emb) + logits3
+    else:
+      raise NotImplementedError()
+
     logits = self.action_head3(logits3)
 
+    # if self.use_queries:
+    #   logits = logits4
+    # else:
+    #   logits = torch.sigmoid(logits4)
+
     state_values = self.value_head(resized_pred)
-    loc_pred = F.softmax(resized_pred, dim=-1).reshape(pred.size(0), 400, 400)
+    loc_pred = F.softmax(
+        resized_pred, dim=-1).reshape(pred.size(0), self.w, self.h)
 
     out = {}
     out['action_logits'] = logits

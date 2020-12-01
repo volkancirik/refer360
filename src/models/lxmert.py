@@ -1,75 +1,28 @@
-from models.td_models import Concat
-from models.td_models import ConcatConv
-from models.td_models import RNN2Conv
-from models.td_models import LingUNet
-from models.visualbert import VisualBert
-from models.lxmert import LXMERTLocalizer
-
 import torch
+import torch.nn as nn
+import os
+
+from lxrt.entry import LXRTEncoder
+from lxrt.modeling import BertLayerNorm, GeLU
+
+from detectron2.engine import DefaultPredictor
+from detectron2.config import get_cfg
+from detectron2.data import MetadataCatalog
+
+import numpy as np
+
+# Max length including <bos> and <eos>
+MAX_SEQ_LENGTH = 100
+DATA_PATH = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
+DETECTRON2_YAML = '../py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
 
 from detectron2.modeling.postprocessing import detector_postprocess
 from detectron2.modeling.roi_heads.fast_rcnn import FastRCNNOutputs
 from torchvision.ops import nms
 from detectron2.structures import Boxes, Instances
-import numpy as np
+
 MIN_BOXES = 36
 MAX_BOXES = 36
-
-
-def get_localizer(args, n_vocab):
-  '''Return a localizer module.
-  '''
-  args.use_raw_image = False
-  rnn_args = {}
-  rnn_args['input_size'] = n_vocab
-  rnn_args['embed_size'] = args.n_emb
-  rnn_args['rnn_hidden_size'] = int(args.n_hid /
-                                    2) if args.bidirectional else args.n_hid
-  rnn_args['num_rnn_layers'] = args.n_layers
-  rnn_args['embed_dropout'] = args.dropout
-  rnn_args['bidirectional'] = args.bidirectional
-  rnn_args['reduce'] = 'last' if not args.bidirectional else 'mean'
-
-  cnn_args = {}
-  out_layer_args = {'linear_hidden_size': args.n_hid,
-                    'num_hidden_layers': args.n_layers}
-  image_channels = args.n_img_channels
-
-  if args.model == 'concat':
-    model = Concat(rnn_args, out_layer_args,
-                   image_channels=image_channels)
-
-  elif args.model == 'concat_conv':
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'num_conv_layers': args.n_layers, 'conv_dropout': args.dropout}
-    model = ConcatConv(rnn_args, cnn_args, out_layer_args,
-                       image_channels=image_channels)
-
-  elif args.model == 'rnn2conv':
-    assert args.n_layers is not None
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'conv_dropout': args.dropout}
-    model = RNN2Conv(rnn_args, cnn_args, out_layer_args,
-                     args.n_layers,
-                     image_channels=image_channels)
-
-  elif args.model == 'lingunet':
-    assert args.n_layers is not None
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'deconv_dropout': args.dropout}
-    model = LingUNet(rnn_args, cnn_args, out_layer_args,
-                     m=args.n_layers,
-                     image_channels=image_channels)
-  elif args.model == 'visualbert':
-    args.use_masks = True
-    model = VisualBert(args, n_vocab)
-  elif args.model == 'lxmert':
-    args.use_raw_image = True
-    model = LXMERTLocalizer(args)
-  else:
-    raise NotImplementedError('Model {} is not implemented'.format(args.model))
-  print('using {} localizer'.format(args.model))
-  return model.cuda()
 
 
 def fast_rcnn_inference_single_image(
@@ -174,3 +127,69 @@ def extract_detectron2_features(detector, raw_images):
       raw_instances_list.append(raw_instances)
 
     return raw_instances_list, roi_features_list
+
+
+class LXMERTLocalizer(nn.Module):
+  def __init__(self, args, num_logits=100*100):
+    super().__init__()
+
+    # Build LXRT encoder
+    self.lxrt_encoder = LXRTEncoder(
+        args,
+        max_seq_length=MAX_SEQ_LENGTH
+    )
+    hid_dim = self.lxrt_encoder.dim
+    self.n_actions = num_logits
+
+    self.logit_fc = nn.Sequential(
+        nn.Linear(hid_dim, hid_dim * 2),
+        GeLU(),
+        BertLayerNorm(hid_dim * 2, eps=1e-12),
+        nn.Linear(hid_dim * 2, num_logits)
+    )
+    self.logit_fc.apply(self.lxrt_encoder.model.init_bert_weights)
+
+    data_path = DATA_PATH
+
+    vg_classes = []
+    with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
+      for object in f.readlines():
+        vg_classes.append(object.split(',')[0].lower().strip())
+
+    MetadataCatalog.get("vg").thing_classes = vg_classes
+    yaml_file = DETECTRON2_YAML
+    cfg = get_cfg()
+    cfg.merge_from_file(yaml_file
+                        )
+    cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
+    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
+    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
+    # VG Weight
+    cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
+    self.predictor = DefaultPredictor(cfg)
+
+  def forward(self, inp):
+
+    instruction = inp['instruction']
+    imgs = inp['imgs']
+
+    instances_list, features_list = extract_detectron2_features(
+        self.predictor, imgs)
+
+    feats = []
+    boxes = []
+    for instances, features in zip(instances_list, features_list):
+      feats.append(features.unsqueeze(0))
+      boxes.append(instances.pred_boxes.tensor.unsqueeze(0))
+
+    feats = torch.cat(feats, 0)
+    boxes = torch.cat(boxes, 0)
+
+    boxes[..., (0, 2)] /= 400.
+    boxes[..., (1, 3)] /= 400.
+
+    x = self.lxrt_encoder(instruction, (feats, boxes))
+    batch_size = x.size(0)
+    logit = self.logit_fc(x).view(batch_size, 100, 100)
+
+    return logit

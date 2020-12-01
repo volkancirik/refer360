@@ -1,5 +1,10 @@
+from collections import defaultdict
+import json
+from operator import itemgetter
+
 import cv2
 import sys
+
 
 import panoramic_camera as camera
 
@@ -14,6 +19,90 @@ from scipy.spatial import Delaunay
 from utils import rad2degree
 from utils import get_det2_features
 from utils import generate_fovs
+from utils import generate_grid
+
+
+def generate_grid(full_w=4552,
+                  full_h=2276,
+                  degree=15):
+  left_w = int(full_w * (degree/360)+1)
+
+  dx = full_w * (degree/360)
+  dy = full_h * (degree/180)
+  DISTANCE = (dx ** 2 + dy ** 2) ** 0.5 + 10
+
+  size = 10
+
+  objects = []
+  nodes = []
+
+  for lng in range(-75, 75, degree):
+    for lat in range(0, 360, degree):
+      gt_x = int(full_w * ((lat)/360.0))
+      gt_y = int(full_h - full_h * ((lng + 90)/180.0))
+
+      objects.append((lat, lng, 2, gt_x, gt_y, []))
+      nodes.append([gt_x, gt_y])
+
+  canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
+
+  node_dict = dict()
+  for kk, o in enumerate(objects):
+    o_type, ox, oy = o[2], o[3], o[4]
+    o_label = '<START>'
+    if o_type > 0:
+      o_label = ''
+
+    #cv2.putText(canvas, o_label, (ox+size, oy+size), font, 3, clr, 5)
+    n = {
+        'id': kk,
+        'lat': o[0],
+        'lng': o[1],
+        'obj_label': o_label,
+        'obj_id': o_type,
+        'x': o[3],
+        'y': o[4],
+        'boxes': o[5],
+        'neighbors': []
+    }
+    node_dict[kk] = n
+
+  color = (125, 125, 125)
+
+  n_nodes = len(nodes)
+  order2nid = {i: i for i in range(n_nodes)}
+
+  idx = n_nodes
+  new_nodes = nodes
+  for ii, n in enumerate(nodes):
+    if n[0] < left_w:
+      order2nid[idx] = ii
+      new_nodes.append((n[0]+full_w, n[1]))
+      idx += 1
+
+  for ii, s1 in enumerate(new_nodes):
+    for jj, s2 in enumerate(new_nodes):
+      if ii == jj:
+        continue
+
+      d = ((s1[0]-s2[0])**2 + (s1[1]-s2[1])**2)**0.5
+      if d <= DISTANCE:
+
+        n0 = order2nid[ii]
+        n1 = order2nid[jj]
+
+        node_dict[n0]['neighbors'] += [n1]
+        node_dict[n1]['neighbors'] += [n0]
+
+        cv2.line(canvas, (s1[0], s1[1]),
+                 (s2[0], s2[1]), color, 3, 8)
+  for kk, o in enumerate(objects):
+    o_type, ox, oy = o[2], o[3], o[4]
+
+    canvas[oy-size:oy+size, ox-size:ox+size, 0] = 255.
+    canvas[oy-size:oy+size, ox-size:ox+size, 1:] = 0
+
+  return node_dict, canvas
 
 
 def get_triangulation(nodes, left_w, width):
@@ -168,7 +257,7 @@ def generate_graph(image_path, predictor, vg_classes,
   return node_dict, canvas
 
 
-if __name__ == '__main__':
+def run_generate_graph():
 
   data_path = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
   vg_classes = []
@@ -215,3 +304,101 @@ if __name__ == '__main__':
         out_root, '{}.fov'.format(pano))
 
     generate_fovs(image_path, node_path, fov_prefix)
+
+
+def run_generate_grid():
+
+  image_list = [line.strip()
+                for line in open(sys.argv[1])]  # ../data/imagelist.txt
+  image_root = sys.argv[2]  # ../data/refer360images
+  out_root = sys.argv[3]  # ../data/grid_data_30
+  degree = int(sys.argv[4])  # 30
+
+  if not os.path.exists(out_root):
+    try:
+      os.makedirs(out_root)
+    except:
+      print('Cannot create folder {}'.format(out_root))
+      quit(1)
+
+  pbar = tqdm(image_list)
+  for fname in pbar:
+    image_path = os.path.join(image_root, fname)
+    pano = fname.split('/')[-1].split('.')[0]
+    nodes, canvas = generate_grid(degree=degree)
+
+    node_path = os.path.join(
+        out_root, '{}.npy'.format(pano))
+
+    np.save(open(node_path, 'wb'), nodes)
+
+    fov_prefix = os.path.join(
+        out_root, '{}.fov'.format(pano))
+
+    generate_fovs(image_path, node_path, fov_prefix)
+
+
+def generate_object_dictionaries():
+  usage = '''Generates json file with dictionaries of visualgenome object ids to refer360 object ids conversions.
+  PYTHONPATH=.. python generate_graph.py ../data/imagelist.txt ../data/graph_data/  ../data/vg_object_dictionaries.all.json all
+
+  PYTHONPATH=.. python generate_graph.py ../data/imagelist.txt ../data/graph_data/  ../data/vg_object_dictionaries.[table,chair].json table,chair
+'''
+  if len(sys.argv) != 5:
+    print(usage)
+    quit(1)
+  data_path = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
+  vg_classes = []
+  with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
+    for object in f.readlines():
+      vg_classes.append(object.split(',')[0].lower().strip())
+
+  image_list = [line.strip()
+                for line in open(sys.argv[1])]  # ../data/imagelist.txt
+  out_root = sys.argv[2]  # ../data/graph_data
+
+  if not os.path.exists(out_root):
+    try:
+      os.makedirs(out_root)
+    except:
+      print('Cannot create folder {}'.format(out_root))
+      quit(1)
+
+  counts = defaultdict(int)
+  pbar = tqdm(image_list)
+  for fname in pbar:
+    pano = fname.split('/')[-1].split('.')[0]
+    node_path = os.path.join(
+        out_root, '{}.npy'.format(pano))
+
+    nodes = np.load(node_path, allow_pickle=True)[()]
+    for node in nodes:
+      vg_id = nodes[node]['obj_id']
+      counts[vg_id] += 1
+
+  sorted_counts = sorted(counts.items(), key=itemgetter(1))[::-1]
+
+  min_th = 5
+  max_th = 50000
+
+  vg2idx = {}
+  idx2vg = {}
+
+  idx = 0
+  out_file = sys.argv[3]  # '../data/vg_object_dictionaries.all.json'
+  include = set(sys.argv[4].split(','))  # all or table,chair
+
+  for ii, (vg_idx, cnt) in enumerate(sorted_counts):
+    if min_th <= cnt <= max_th and (vg_classes[vg_idx] in include or sys.argv[4] == 'all'):
+      print(idx, cnt, vg_classes[vg_idx])
+      vg2idx[vg_idx] = idx
+      idx2vg[idx] = vg_idx
+      idx += 1
+  json.dump({'vg2idx': vg2idx,
+             'idx2vg': idx2vg}, open(out_file, 'w'))
+
+
+if __name__ == '__main__':
+  run_generate_graph()
+  # run_generate_grid()
+  # generate_object_dictionaries()

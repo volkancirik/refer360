@@ -25,6 +25,8 @@ class Actor(nn.Module):
 
     self.act2out = nn.Linear(n_hid, n_actions)
     self.val2out = nn.Linear(n_hid, 1)
+    self.act2out.bias.data.fill_(0)
+    self.val2out.bias.data.fill_(0)
 
     self.RELU = nn.ReLU()
     self.n_layers = n_layers
@@ -72,6 +74,7 @@ class Finder(nn.Module):
     self.saved_actions = [[] for bb in range(args.batch_size)]
     self.batch_size = args.batch_size
     self.use_masks = args.use_masks
+    self.use_raw_image = args.use_raw_image
 
   def forward(self, observations, rnn_hidden=None):
 
@@ -88,10 +91,17 @@ class Finder(nn.Module):
     if self.use_masks:
       kwargs['texts_mask'] = texts_mask
       kwargs['texts_emb_mask'] = texts_emb_mask
-    loc_pred = self.localizer(images, texts, seq_lengths.cpu(), **kwargs)
+
+    if self.use_raw_image:
+      kwargs['imgs'] = [o['img']
+                        for o in observations['observations']]
+      kwargs['instruction'] = instruction
+      loc_pred = self.localizer(kwargs)
+    else:
+      loc_pred = self.localizer(images, texts, seq_lengths.cpu(), **kwargs)
 
     obs = loc_pred.reshape(
-        self.batch_size, loc_pred.size(1)*loc_pred.size(2))
+        self.batch_size, loc_pred.size(1) * loc_pred.size(2))
 
     state = self.obs2state(obs)
     state_now, rnn_hidden = self.memory(
@@ -105,4 +115,5 @@ class Finder(nn.Module):
     out['state_values'] = state_values
     out['loc_pred'] = loc_pred
     out['rnn_hidden'] = rnn_hidden
+
     return out

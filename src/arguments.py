@@ -58,18 +58,18 @@ def get_train_rl():
                       help='random seed (default: 0)')
   parser.add_argument('--log-interval', type=int, default=1,
                       help='interval between training status logs (default: 1)')
-  parser.add_argument('--max-step', type=int, default=8,
-                      help='Max # of steps (default: 8)')
-  parser.add_argument('--batch-size', type=int, default=8,
-                      help='Batch size (default: 8)')
-  parser.add_argument('--lr', type=float, default=0.0001,
-                      help='learning rate (default: 0.0001)')
+  parser.add_argument('--max-step', type=int, default=24,
+                      help='Max # of steps (default: 24)')
+  parser.add_argument('--batch-size', type=int, default=4,
+                      help='Batch size (default: 4)')
+  parser.add_argument('--lr', type=float, default=0.00001,
+                      help='learning rate (default: 0.00001)')
   parser.add_argument('--weight-decay', type=float, default=0.00001,
                       help='L2 regularization (weight decay) term (default: 0.00001)')
   parser.add_argument('--verbose',
                       action='store_true', help='Print to a progressbar or lines in stdout')
-  parser.add_argument('--degrees', type=int, default=5,
-                      help='degrees in FoV change, default=5')
+  parser.add_argument('--degrees', type=int, default=15,
+                      help='degrees in FoV change, default=15')
   parser.add_argument('--oracle-mode',
                       action='store_true', help='Oracle Mode')
   parser.add_argument('--random-agent',
@@ -85,6 +85,21 @@ def get_train_rl():
                       help='list of image categories for validation separated by comma, options are restaurant, bedroom, living_room, plaza_courtyard, shop, street or all, default=all')
   parser.add_argument('--use-masks',
                       action='store_true', help='Use masks for text embeddings')
+  # LXRT Model Config
+  # Note: LXRT = L, X, R (three encoders), Transformer
+  parser.add_argument('--loadLXMERT', dest='load_lxmert', type=str, default=None,
+                      help='Load the pre-trained LXMERT model.')
+  parser.add_argument("--llayers", default=9, type=int,
+                      help='Number of Language layers')
+  parser.add_argument("--xlayers", default=5, type=int,
+                      help='Number of CROSS-modality layers.')
+  parser.add_argument("--rlayers", default=5, type=int,
+                      help='Number of object Relationship layers.')
+  parser.add_argument("--fromScratch", dest='from_scratch', action='store_const', default=False, const=True,
+                      help='If none of the --load, --loadLXMERT, --loadLXMERTQA is set, '
+                      'the model would be trained from scratch. If --fromScratch is'
+                      ' not specified, the model would load BERT-pre-trained weights by'
+                      ' default. ')
 
   return parser
 
@@ -149,10 +164,10 @@ def get_train_fovpretraining():
   parser.add_argument('--log-interval', type=int, default=1,
                       help='interval between training status logs (default: 1)')
 
-  parser.add_argument('--batch-size', type=int, default=8,
-                      help='Batch size (default: 8)')
-  parser.add_argument('--lr', type=float, default=0.0001,
-                      help='learning rate (default: 0.0001)')
+  parser.add_argument('--batch-size', type=int, default=64,
+                      help='Batch size (default: 64)')
+  parser.add_argument('--lr', type=float, default=0.00001,
+                      help='learning rate (default: 0.00001)')
   parser.add_argument('--weight-decay', type=float, default=0.00001,
                       help='L2 regularization (weight decay) term (default: 0.00001)')
   parser.add_argument('--verbose',
@@ -166,5 +181,37 @@ def get_train_fovpretraining():
 
   parser.add_argument('--val-images', type=str, default='all',
                       help='list of image categories for validation separated by comma, options are restaurant, bedroom, living_room, plaza_courtyard, shop, street or all, default=all')
+  parser.add_argument('--task', type=str, default='task1',
+                      help='name of the task, options are task1, task2 default=task1')
+
+  parser.add_argument('--data-root', type=str, default='../data/fov_pretraining_all',
+                      help='load data from data_root path default ../data/fov_pretraining_all')
+
+  parser.add_argument('--obj-dict-file', type=str, default='../data/vg_object_dictionaries.all.json',
+                      help='object dictionary file, default=../data/vg_object_dictionaries.all.json')
+
+  parser.add_argument('--direction', type=str, default='canonical',
+                      help='direction method used canonical | cartesian | lup | canonical_proximity, default=canonical')
+
+  parser.add_argument('--fov-emb-mode', type=int, default=2,
+                      help='Fov embeddings mode 0: dont use it 1:only fov embeddings 2: fov embeddings + image features default=2')
+  parser.add_argument(
+      '--ignore-list', help='Comma separated list of ground-truth moves to ignore, default=""', default='')
+
+  # LXRT Model Config
+  # Note: LXRT = L, X, R (three encoders), Transformer
+  parser.add_argument('--loadLXMERT', dest='load_lxmert', type=str, default=None,
+                      help='Load the pre-trained LXMERT model.')
+  parser.add_argument("--llayers", default=9, type=int,
+                      help='Number of Language layers')
+  parser.add_argument("--xlayers", default=5, type=int,
+                      help='Number of CROSS-modality layers.')
+  parser.add_argument("--rlayers", default=5, type=int,
+                      help='Number of object Relationship layers.')
+  parser.add_argument("--fromScratch", dest='from_scratch', action='store_const', default=False, const=True,
+                      help='If none of the --load, --loadLXMERT, --loadLXMERTQA is set, '
+                      'the model would be trained from scratch. If --fromScratch is'
+                      ' not specified, the model would load BERT-pre-trained weights by'
+                      ' default. ')
 
   return parser

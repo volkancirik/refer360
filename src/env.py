@@ -7,12 +7,13 @@ from utils import load_datasets
 from utils import smoothed_gaussian
 from utils import gaussian_target
 from utils import rad2degree
-from panoramic_camera import PanoramicCamera as camera
+#from panoramic_camera import PanoramicCamera as camera
+from panoramic_camera_gpu import PanoramicCameraGPU as camera
 from torchvision import transforms
 import numpy as np
 import torch
 from collections import defaultdict
-from PIL import Image
+#from PIL import Image
 EPS = 1e-10
 FOV_SIZE = 400
 
@@ -253,16 +254,17 @@ class Refer360Batch():
     infos = []
     # keep a list of image observations
     im_stack = []
+
     for ii, state in enumerate(self.env.getStates()):
       datum = self.batch[ii]
 
       # Check dimension order
-      perspective_image = state[0].astype('uint8')
-      pil_img = Image.fromarray(perspective_image)
-      img_tensor = self.preprocess(pil_img)
-      im_stack.append(img_tensor.unsqueeze(0))
-      # im_stack.append(torch.from_numpy(
-      #     np.expand_dims(state[0], axis=0)).permute(0, 3, 1, 2).float())
+      # perspective_image = state[0].cpu().numpy().astype('uint8')
+      # pil_img = Image.fromarray(perspective_image)
+      # img_tensor = self.preprocess(pil_img)
+      # im_stack.append(img_tensor.unsqueeze(0))
+      perspective_image = state[0].permute(2, 1, 0)
+      im_stack.append(perspective_image.unsqueeze(0))
 
       if self.use_sentences:
         refexps = [datum['refexps'][self.sentence_ids[ii]]]

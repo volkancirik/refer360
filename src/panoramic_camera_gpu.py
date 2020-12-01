@@ -4,9 +4,39 @@ adapted from here :  https://github.com/fuenwang/Equirec2Perspec/blob/master/Equ
 '''
 import cv2
 import numpy as np
+import torch
 
 
-class PanoramicCamera:
+def deg2rad(theta):
+  return torch.tensor([theta * np.pi / 180]).cuda()
+
+
+def unravel_index(index, shape):
+  out = []
+  for dim in reversed(shape):
+    out.append(index % dim)
+    index = index // dim
+  return tuple(reversed(out))
+
+
+def rotation_matrix(axis, theta):
+  """
+  Generalized 3d rotation via Euler-Rodriguez formula, https://www.wikiwand.com/en/Euler%E2%80%93Rodrigues_formula
+  Return the rotation matrix associated with counterclockwise rotation about
+  the given axis by theta radians.
+  source: https://gist.github.com/fgolemo/94b5caf0e209a6e71ab0ce2d75ad3ed8
+  """
+  axis = axis / torch.sqrt(torch.dot(axis, axis))
+  a = torch.cos(theta / 2.0)
+  b, c, d = -axis * torch.sin(theta / 2.0)
+  aa, bb, cc, dd = a * a, b * b, c * c, d * d
+  bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+  return torch.tensor([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                       [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                       [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]]).cuda()
+
+
+class PanoramicCameraGPU:
   def __init__(self, fov=90, output_image_shape=(400, 400)):
     """Init the camera.
     """
@@ -53,18 +83,28 @@ class PanoramicCamera:
   def get_image(self):
     """Return the image in the FoV
     """
-    image = cv2.remap(self._img, self.lat_map, self.lng_map,
-                      cv2.INTER_CUBIC, borderMode=cv2.BORDER_WRAP)
+
+    img = torch.tensor(self._img).float().permute(2, 0, 1).unsqueeze(0).cuda()
+    mapping = torch.stack((self.lat_map, self.lng_map), axis=2).unsqueeze(0)
+
+    w = img.shape[3]
+    h = img.shape[2]
+    mapping[:, :, :, 0] -= w/2
+    mapping[:, :, :, 0] /= w/2
+    mapping[:, :, :, 1] -= h/2
+    mapping[:, :, :, 1] /= h/2
+
+    image = torch.nn.functional.grid_sample(img, mapping,
+                                            align_corners=True,
+                                            padding_mode='border').squeeze(0).permute(1, 2, 0)
+
     return image
 
   def get_map(self):
-    """Return the map.
-    """
-
     lat_map = (self.lat_map / self._width) * 360.0 - 180.0
     lng_map = ((self.lng_map / self._height) * 180.0 - 90.0) * -1.0
 
-    return np.stack((lat_map, lng_map), axis=2)
+    return torch.stack((lat_map, lng_map), axis=2)
 
   def get_pixel_map(self):
     """Return the pixel map.
@@ -72,7 +112,7 @@ class PanoramicCamera:
     lng_map = self.lng_map
     lat_map = self.lat_map
 
-    return lat_map.astype(int), lng_map.astype(int)
+    return lat_map.long(), lng_map.long()
 
   @staticmethod
   def find_nearest(array, value):
@@ -80,14 +120,16 @@ class PanoramicCamera:
     """
     x_distances = array[:, :, 0] - value[0]
     y_distances = array[:, :, 1] - value[1]
-    distances = np.sqrt(x_distances * x_distances + y_distances * y_distances)
+    distances = torch.sqrt(x_distances * x_distances +
+                           y_distances * y_distances)
     idx = distances.argmin()
-    return np.unravel_index(idx, array[:, :, 0].shape)
+    return unravel_index(idx, array[:, :, 0].shape)
 
   def get_image_coordinate_for(self, lat, lng):
     """Return coordinates for given lng,lat
     """
-    coords = PanoramicCamera.find_nearest(self.get_map(), (lat, lng))
+    coords = PanoramicCameraGPU.find_nearest(
+        self.get_map(), (lat, lng))
 
     # given lng,lat may not be in the FoV
     if coords[0] == 0 or coords[0] == self.output_image_w - 1 or coords[1] == 0 or coords[1] == self.output_image_h - 1:
@@ -110,40 +152,44 @@ class PanoramicCamera:
     c_y = (height - 1) / 2.0
 
     wangle = (180 - wFOV) / 2.0
-    w_len = 2 * RADIUS * np.sin(np.radians(wFOV / 2.0)) / \
-        np.sin(np.radians(wangle))
+    w_len = 2 * RADIUS * torch.sin(deg2rad(wFOV / 2.0)) / \
+        torch.sin(deg2rad(wangle))
     w_interval = w_len / (width - 1)
 
     hangle = (180 - hFOV) / 2.0
-    h_len = 2 * RADIUS * np.sin(np.radians(hFOV / 2.0)) / \
-        np.sin(np.radians(hangle))
+    h_len = 2 * RADIUS * torch.sin(deg2rad(hFOV / 2.0)) / \
+        torch.sin(deg2rad(hangle))
     h_interval = h_len / (height - 1)
-    x_map = np.zeros([height, width], np.float32) + RADIUS
-    y_map = np.tile((np.arange(0, width) - c_x) * w_interval, [height, 1])
-    z_map = -np.tile((np.arange(0, height) - c_y) * h_interval, [width, 1]).T
-    D = np.sqrt(x_map ** 2 + y_map ** 2 + z_map ** 2)
-    xyz = np.zeros([height, width, 3], np.float)
+    x_map = torch.zeros([height, width]).cuda() + RADIUS
+    y_map = ((torch.arange(0, width).cuda() - c_x) *
+             w_interval).repeat(height, 1)
+    z_map = -((torch.arange(0, height).cuda() - c_y) *
+              h_interval).repeat(width, 1).transpose(1, 0)
+    D = torch.sqrt(x_map ** 2 + y_map ** 2 + z_map ** 2).cuda()
+    xyz = torch.zeros([height, width, 3]).cuda()
     xyz[:, :, 0] = (RADIUS / D * x_map)[:, :]
     xyz[:, :, 1] = (RADIUS / D * y_map)[:, :]
     xyz[:, :, 2] = (RADIUS / D * z_map)[:, :]
 
-    y_axis = np.array([0.0, 1.0, 0.0], np.float32)
-    z_axis = np.array([0.0, 0.0, 1.0], np.float32)
-    [R1, _] = cv2.Rodrigues(z_axis * np.radians(THETA))
-    [R2, _] = cv2.Rodrigues(np.dot(R1, y_axis) * np.radians(-PHI))
+    y_axis = torch.tensor([[0.0, 1.0, 0.0]]).cuda().transpose(1, 0)
+    z_axis = torch.tensor([0.0, 0.0, 1.0]).cuda()
+
+    R1 = rotation_matrix(z_axis, deg2rad(THETA))
+    R2 = rotation_matrix(R1.mm(y_axis).transpose(
+        1, 0).reshape(3), deg2rad(-PHI))
 
     xyz = xyz.reshape([height * width, 3]).T
-    xyz = np.dot(R1, xyz)
-    xyz = np.dot(R2, xyz).T
+    xyz = R1.mm(xyz)
+    xyz = R2.mm(xyz).transpose(1, 0)
 
-    lng = np.arcsin(xyz[:, 2] / RADIUS)
-    lat = np.zeros([height * width], np.float)
-    theta = np.arctan(xyz[:, 1] / xyz[:, 0])
+    lng = torch.asin(xyz[:, 2] / RADIUS)
+    lat = torch.zeros([height * width]).cuda()
+    theta = torch.atan(xyz[:, 1] / xyz[:, 0])
     idx1 = xyz[:, 0] > 0
     idx2 = xyz[:, 1] > 0
 
-    idx3 = ((1 - idx1) * idx2).astype(np.bool)
-    idx4 = ((1 - idx1) * (1 - idx2)).astype(np.bool)
+    idx3 = ((1 - idx1.long()) * idx2.long()).bool()
+    idx4 = ((1 - idx1.long()) * (1 - idx2.long())).bool()
 
     lat[idx1] = theta[idx1]
     lat[idx3] = theta[idx3] + np.pi
@@ -154,5 +200,5 @@ class PanoramicCamera:
     lat = lat / 180 * equ_cx + equ_cx
     lng = lng / 90 * equ_cy + equ_cy
 
-    self.lng_map = lng.astype(np.float32)
-    self.lat_map = lat.astype(np.float32)
+    self.lng_map = lng.float()
+    self.lat_map = lat.float()

@@ -78,24 +78,21 @@ class Unet3(torch.nn.Module):
     x4 = self.norm5(self.act(self.conv4(x3)))
     x5 = self.act(self.conv5(x4))
 
-    print('x3', x3.size())
-    print('x4', x4.size())
-    print('x5', x5.size())
     if embedding is not None:
       lang_filter_weights = F.normalize(self.lang_filter_linear(embedding))
       lang_filter_weights = lang_filter_weights.view(
           [self.hidden_channels, self.hidden_channels, 1, 1])
       x5 = F.conv2d(x5, lang_filter_weights)
       x5 = self.dropout(x5)
-    print('x5', x5.size())
+
     x6 = self.act(self.deconv1(x5, output_size=x4.size()))
-    print('x6', x6.size())
+
     x46 = torch.cat([x4, x6], 1)
-    print('x46', x6.size())
+
     x7 = self.dnorm3(self.act(self.deconv2(x46, output_size=x3.size())))
-    print('x7', x7.size())
+
     x37 = torch.cat([x3, x7], 1)
-    print('x37', x37.size())
+
     x8 = self.dnorm4(self.act(self.deconv3(x37, output_size=x2.size())))
     x28 = torch.cat([x2, x8], 1)
     x9 = self.dnorm5(self.act(self.deconv4(x28, output_size=x1.size())))
@@ -106,14 +103,5 @@ class Unet3(torch.nn.Module):
     logsoftmaxed = self.lm(reshaped)
     logout = logsoftmaxed.view(
         out.size(0), out.size(1), out.size(2), out.size(3))
-    """
-        print("in:", input.size())
-        print("x1:", x1.size())
-        print("x2:", x2.size())
-        print("x3:", x3.size())
-        print("x4:", x4.size())
-        print("x5:", x5.size())
-        print("x6:", x6.size())
-        """
 
     return logout

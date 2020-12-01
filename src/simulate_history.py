@@ -204,8 +204,8 @@ if __name__ == '__main__':
 
       pixel_map = cam.get_map()
 
-      curr_lng = pixel_map[pred_y][pred_x][0]
-      curr_lat = pixel_map[pred_y][pred_x][1]
+      curr_lat = pixel_map[pred_y][pred_x][0]
+      curr_lng = pixel_map[pred_y][pred_x][1]
 
     obj_canvas = np.ones((full_h, full_w, 3), dtype='uint8')*255
     cv2.fillPoly(obj_canvas, points, color)
