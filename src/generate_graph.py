@@ -47,13 +47,15 @@ def get_triangulation(nodes, left_w, width):
 def generate_graph(image_path, predictor, vg_classes,
                    full_w=4552,
                    full_h=2276,
-                   left_w=128):
+                   left_w=128,
+                   topk=60):
   font = cv2.FONT_HERSHEY_SIMPLEX
   THRESHOLD = 50
   size = 20
 
-  objects = []
-  nodes = []
+  all_objects = []
+  all_nodes = []
+  all_scores = []
 
   slat, slng = rad2degree(np.random.uniform(
       0, 6), np.random.uniform(1, 1.5), adjust=True)
@@ -61,36 +63,32 @@ def generate_graph(image_path, predictor, vg_classes,
   sy = int(full_h - full_h *
            ((slng + 90)/180.0))
 
-  objects.append((slat, slng, -1, sx, sy, [sx-1, sy-1, sx+1, sy+1]))
-  nodes.append([sx, sy])
+  all_objects.append((slat, slng, -1, sx, sy, [sx-1, sy-1, sx+1, sy+1]))
+  all_nodes.append([sx, sy])
+  all_scores = [1]
 
   for fov_size in [400, 1200]:
 
     cam = camera(output_image_shape=(fov_size, fov_size))
     cam.load_img(image_path)
 
-    for lng in range(-45, 90, 30):
+    for lng in range(-45, 90, 45):
       for lat in range(-180, 180, 30):
         cam.look(lat, lng)
         pixel_map = cam.get_map()
-
         img = cam.get_image()
-
-        # cv2.imshow("", img)
-        # cv2.waitKey()
-
         detectron_outputs = predictor(img)
 
-        boxes, object_types = get_det2_features(
+        boxes, object_types, det_scores = get_det2_features(
             detectron_outputs["instances"].to("cpu"))
-        for b, o in zip(boxes, object_types):
+        for b, o, s in zip(boxes, object_types, det_scores):
           center_x = int((b[0]+b[2])/2)
           center_y = int((b[1]+b[3])/2)
           o_lat = pixel_map[center_y][center_x][0]
           o_lng = pixel_map[center_y][center_x][1]
 
           flag = True
-          for r in objects:
+          for r in all_objects:
             d = ((r[0] - o_lng)**2 + (r[1] - o_lat)**2)**0.5
             if d < THRESHOLD and r[2] == o:
               flag = False
@@ -98,10 +96,19 @@ def generate_graph(image_path, predictor, vg_classes,
             x = int(full_w * ((o_lat + 180)/360.0))
             y = int(full_h - full_h *
                     ((o_lng + 90)/180.0))
-            objects.append((o_lat, o_lng, o, x, y, b))
-            nodes.append([x, y])
+            all_objects.append((o_lat, o_lng, o, x, y, b))
+            all_nodes.append([x, y])
+            all_scores.append(s)
 
-  print('# of detected objects', len(nodes))
+  scores, nodes, objects = zip(
+      *sorted(zip(all_scores, all_nodes, all_objects), reverse=True))
+
+  scores = scores[:topk]
+  nodes = nodes[:topk]
+  objects = objects[:topk]
+
+  print('# of detected objects {} | {} used objects'.format(
+      len(all_nodes), len(nodes)))
   tri, order2nid, n_nodes = get_triangulation(nodes, left_w, full_w)
   canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
 
@@ -176,8 +183,6 @@ def generate_graph(image_path, predictor, vg_classes,
              (x1, nodes[s[1]][1]), color3, 3, 8)
 
   canvas = cv2.resize(canvas, (800, 400))
-#  cv2.imshow("", canvas)
-#  cv2.waitKey()
 
   return node_dict, canvas
 
@@ -195,7 +200,7 @@ def run_generate_graph():
   cfg = get_cfg()
   cfg.merge_from_file(yaml_file)
   cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 100
-  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
+  cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
   cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"

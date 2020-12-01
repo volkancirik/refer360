@@ -265,13 +265,15 @@ def rad2degree(lat, lng,
 def get_det2_features(detections):
   boxes = []
   obj_classes = []
-
-  for box, obj_class in zip(detections.pred_boxes, detections.pred_classes):
+  scores = []
+  for box, obj_class, score in zip(detections.pred_boxes, detections.pred_classes, detections.scores):
     box = box.cpu().detach().numpy()
     boxes.append(box)
     obj_class = obj_class.cpu().detach().numpy().tolist()
     obj_classes.append(obj_class)
-  return boxes, obj_classes
+    scores.append(score.item())
+
+  return boxes, obj_classes, scores
 
 
 def generate_grid(full_w=4552,

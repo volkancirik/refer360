@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
       v = v.draw_instance_predictions(detectron_outputs["instances"].to("cpu"))
       obj_img = cv2.cvtColor(v.get_image()[:, :, ::-1], cv2.COLOR_RGB2BGR)
-      boxes, object_types = get_det2_features(
+      boxes, object_types, _ = get_det2_features(
           detectron_outputs["instances"].to("cpu"))
 
       for b, o in zip(boxes, object_types):
