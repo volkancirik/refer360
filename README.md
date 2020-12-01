@@ -7,12 +7,17 @@ This repository is for ACL2020 paper [Refer360: A Referring Expression Recogniti
 
 #### Installation
 
-Setup an anaconda environment first if you don't have one. Run `install.sh` to create conda environment `refer360sim`.
+Setup an anaconda environment first if you don't have one. Create conda environment `refer360` and activate it.
+
+    conda create -n refer360 python=3.7 -y
+    source activate refer360
+
+Run `install.sh` to install packages to your environment.
 
 Preprocess the json files for the simulator:
 
     PYTHONPATH=.. python dump_data.py  ../data/dumps all
-    
+
 #### Setting up Data
 
 We used [SUN360](http://people.csail.mit.edu/jxiao/SUN360/main.html) image database as our source of scenes. Please fill out [this form](https://forms.gle/yHNCsQVBHjqSHr738) to download the images.  Move downloaded `refer360images.tar.gz` to `data/` extract via `tar xvfz refer360images.tar.gz` where the folder structure should be as follows for scene types and categories under `data/refer360images`:
