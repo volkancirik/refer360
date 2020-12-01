@@ -38,7 +38,14 @@ def get_triangulation(nodes, left_w, width):
   for ii, n in enumerate(nodes):
     if n[0] < left_w:
       order2nid[idx] = ii
-      new_nodes.append((n[0]+width, n[1]))
+      try:
+        new_nodes.append((n[0]+width, n[1]))
+      except:
+        print('something is wrong with new_nodes')
+        print(type(new_nodes))
+        print(new_nodes)
+        print(len(new_nodes))
+        quit(1)
       idx += 1
   tri = Delaunay(np.array(new_nodes))
   return tri, order2nid, n_nodes
@@ -103,9 +110,9 @@ def generate_graph(image_path, predictor, vg_classes,
   scores, nodes, objects = zip(
       *sorted(zip(all_scores, all_nodes, all_objects), reverse=True))
 
-  scores = scores[:topk]
-  nodes = nodes[:topk]
-  objects = objects[:topk]
+  scores = list(scores[:topk])
+  nodes = list(nodes[:topk])
+  objects = list(objects[:topk])
 
   print('# of detected objects {} | {} used objects'.format(
       len(all_nodes), len(nodes)))
