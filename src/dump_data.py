@@ -1,20 +1,24 @@
+import paths
+import sys
+from utils import dump_datasets
+from utils import SPLITS
+import os
+
+
 usage = '''Dump data for a category of images. all for all categories.
 
 argv[1] : data dump folder
 argv[2] : list of image categories comma separated or 'all'
 argv[3] : graph data root (optional)
 example:
-$ PYTHONPATH=.. python dump_data.py  ../data/dumps all
-$ PYTHONPATH=.. python dump_data.py  ../data/graph_grounding all graph_grounding ../data/graph_data
-$ PYTHONPATH=.. python dump_data.py  ../data/fov_pretraining all fov_pretraining ../data/fov_data ../data/graph_data ../data/vg_object_dictionaries.all.json
-$ PYTHONPATH=.. python dump_data.py  ../data/dumps restaurant
-$ PYTHONPATH=.. python dump_data.py  ../data/dumps restaurant,shop,expo_showroom,living_room,bedroom
-$ PYTHONPATH=.. python dump_data.py  ../data/dumps street,plaza_courtyard
+$ python dump_data.py  ../data/dumps all
+$ python dump_data.py  ../data/graph_grounding all graph_grounding ../data/graph_data
+$ python dump_data.py  ../data/fov_pretraining all fov_pretraining ../data/fov_data ../data/graph_data ../data/vg_object_dictionaries.all.json
+$ python dump_data.py  ../data/dumps restaurant
+$ python dump_data.py  ../data/dumps restaurant,shop,expo_showroom,living_room,bedroom
+$ python dump_data.py  ../data/dumps street,plaza_courtyard
 '''
-from utils import dump_datasets
-from utils import SPLITS
-import sys
-import os
+
 if len(sys.argv) < 2 or len(sys.argv) > 7:
   print(usage)
   quit(1)

@@ -11,7 +11,8 @@ src/notebooks/.ipynb_checkpoints/
 src/scripts
 *__pycache__
 *.pyc
-py_bottom_up_attention/*
+py_bottom_up_attention
+lxmert
 
 
 

@@ -1,3 +1,4 @@
+import paths
 from collections import defaultdict
 import json
 from operator import itemgetter
