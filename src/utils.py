@@ -382,7 +382,7 @@ def get_moves(instance, gt_lat, gt_lng, n_sentences,
 
 
 def load_datasets(splits, image_categories='all',
-                  root='../data/dumps'):
+                  root='../data/continuous_grounding'):
   '''Loads a dataset dump.
   '''
   d, s = [], []
@@ -541,7 +541,7 @@ def dump_datasets(splits, image_categories, output_file,
 
               if any(directions):
                 data.append(mdatum)
-        elif task == 'fov_pretraining_grid' and task_root != '':
+        elif task == 'grid_fov_pretraining' and task_root != '':
           node_path = os.path.join(graph_root, '{}.npy'.format(pano))
           node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
           fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))

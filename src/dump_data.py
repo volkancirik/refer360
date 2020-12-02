@@ -9,14 +9,18 @@ usage = '''Dump data for a category of images. all for all categories.
 
 argv[1] : data dump folder
 argv[2] : list of image categories comma separated or 'all'
-argv[3] : graph data root (optional)
+argv[3] : task name continuous_grounding|graph_grounding|fov_pretraining|grid_fov_pretraining (optional)
+argv[4] : task root in ../data where FoVs are located (optional)
+argv[5] : object detections folder for panoramas ../data (optional)
+argv[6] : object dictionary file
 example:
-$ python dump_data.py  ../data/dumps all
-$ python dump_data.py  ../data/graph_grounding all graph_grounding ../data/graph_data
-$ python dump_data.py  ../data/fov_pretraining all fov_pretraining ../data/fov_data ../data/graph_data ../data/vg_object_dictionaries.all.json
-$ python dump_data.py  ../data/dumps restaurant
-$ python dump_data.py  ../data/dumps restaurant,shop,expo_showroom,living_room,bedroom
-$ python dump_data.py  ../data/dumps street,plaza_courtyard
+$ python dump_data.py  ../data/continuous_grounding all
+$ python dump_data.py  ../data/graph_grounding all graph_grounding ../data/graph_data_top60
+$ python dump_data.py  ../data/fov_pretraining all fov_pretraining ../data/grount_truth_moves ../data/graph_data_top60 ../data/vg_object_dictionaries.top50.json
+$ python dump_data.py  ../data/grid_fov_pretraining all grid_fov_pretraining ../data/grid_data_30degrees/ ../data/graph_data_top60 ../data/vg_object_dictionaries.top50.json
+$ python dump_data.py  ../data/continuous_grounding restaurant
+$ python dump_data.py  ../data/continuous_grounding restaurant,shop,expo_showroom,living_room,bedroom
+$ python dump_data.py  ../data/continuous_grounding street,plaza_courtyard
 '''
 
 if len(sys.argv) < 2 or len(sys.argv) > 7:
@@ -26,6 +30,9 @@ task = 'continuous_grounding'
 task_root = ''
 graph_root = ''
 obj_dict_file = '../data/vg_object_dictionaries.all.json'
+
+dump_root = sys.argv[1]
+images = sys.argv[2]
 
 if len(sys.argv) > 4:
   task = sys.argv[3]
@@ -40,10 +47,6 @@ if 6 <= len(sys.argv) <= 7:
   else:
     print(usage)
     quit(1)
-
-
-dump_root = sys.argv[1]
-images = sys.argv[2]
 
 if dump_root != '' and not os.path.exists(dump_root):
   try:

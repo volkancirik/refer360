@@ -1,4 +1,5 @@
 data/refer360images/
+data/continuous_grounding/
 data/dumps/
 data/fov_pretraining*
 data/vg_object_dictionaries*.json
