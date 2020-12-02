@@ -4,16 +4,16 @@ The main structure is similar to https://github.com/peteanderson80/Matterport3DS
 '''
 from dict import Dictionary
 from utils import load_datasets
-from utils import smoothed_gaussian
-from utils import gaussian_target
+from model_utils import smoothed_gaussian
+from model_utils import gaussian_target
 from utils import rad2degree
-#from panoramic_camera import PanoramicCamera as camera
+# from panoramic_camera import PanoramicCamera as camera
 from panoramic_camera_gpu import PanoramicCameraGPU as camera
 from torchvision import transforms
 import numpy as np
 import torch
 from collections import defaultdict
-#from PIL import Image
+from PIL import Image
 EPS = 1e-10
 FOV_SIZE = 400
 
@@ -46,9 +46,14 @@ class EnvBatch():
     # set # of cameras batch_size
     self.cameras = [camera(fov=fov,
                            output_image_shape=shape,
-                           use_tensor_image=True) for ii in range(self.batch_size)]
+                           use_tensor_image=False) for ii in range(self.batch_size)]
     # keep track of which cameras are done
     self._done = [False for ii in range(self.batch_size)]
+    self.preprocess = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
   def newEpisodes(self, pano_paths, gt_loc=[]):
     '''Initialize cameras with new images.
@@ -56,6 +61,7 @@ class EnvBatch():
     for ii, pano_path in enumerate(pano_paths):
       self.cameras[ii].load_img(
           pano_path, gt_loc=gt_loc[ii])
+      self.cameras[ii].neighbors = None
       self._done[ii] = False
 
   def getStates(self):
@@ -103,6 +109,46 @@ class EnvBatch():
 
           self.cameras[ii].look(latitude, longitude)
 
+  def look_ahead(self):
+    '''Take a step in 4 directions.
+    '''
+
+    for ii in range(self.batch_size):
+      orig_lat = self.cameras[ii].lat
+      orig_lng = self.cameras[ii].lng
+      neighbors = [np.zeros((FOV_SIZE, FOV_SIZE, 3), dtype='uint8')]*4
+      if not self._done[ii]:
+        neighbors = []
+        for navigate in [1, 2, 3, 4]:
+          longitude = orig_lng + self.__look__[navigate][1]
+          latitude = orig_lat + self.__look__[navigate][0]
+
+          longitude = min(max(-90, longitude), 90)
+          if longitude < -90:
+            longitude = -90 - (longitude + 90)
+            latitude = latitude + 180
+          elif longitude > 90:
+            longitude = 90 - (longitude - 90)
+            latitude = latitude + 180
+
+          if latitude > 180:
+            latitude = latitude - 360
+          elif latitude < -180:
+            latitude = latitude + 360
+
+          self.cameras[ii].look(latitude, longitude)
+          img = self.cameras[ii].get_image()
+          neighbors.append(img)
+        self.cameras[ii].look(orig_lat, orig_lng)
+
+      im_stack = []
+      for n in neighbors:
+        pil_img = Image.fromarray(n)
+        img_tensor = self.preprocess(pil_img)
+        im_stack.append(img_tensor.unsqueeze(0))
+
+      self.cameras[ii].neighbors = torch.cat(im_stack, 0).cuda()
+
 
 class Refer360Batch():
   '''Refer360 environment
@@ -113,6 +159,7 @@ class Refer360Batch():
                image_w=FOV_SIZE,
                fov=90,
                degrees=5,
+               use_look_ahead=False,
                use_sentences=False,
                use_gt_action=False,
                oracle_mode=False,
@@ -124,6 +171,7 @@ class Refer360Batch():
     self.image_h = image_h
     self.fov = 90
     self.degrees = degrees
+    self.use_look_ahead = use_look_ahead
 
     # observed image size
     self.observation_space = (3, FOV_SIZE, FOV_SIZE)
@@ -256,17 +304,18 @@ class Refer360Batch():
     # keep a list of image observations
     im_stack = []
 
+    if self.use_look_ahead:
+      self.env.look_ahead()
+
     for ii, state in enumerate(self.env.getStates()):
       datum = self.batch[ii]
 
       # Check dimension order
-      perspective_image = state[0].permute(2, 0, 1)
-      # perspective_image = state[0].cpu().numpy().astype('uint8')
-      # pil_img = Image.fromarray(perspective_image)
-      # img_tensor = self.preprocess(pil_img)
-      # im_stack.append(img_tensor.unsqueeze(0))
+      perspective_image = state[0]
 
-      im_stack.append(perspective_image.unsqueeze(0))
+      pil_img = Image.fromarray(perspective_image)
+      img_tensor = self.preprocess(pil_img)
+      im_stack.append(img_tensor.unsqueeze(0))
 
       if self.use_sentences:
         refexps = [datum['refexps'][self.sentence_ids[ii]]]
@@ -292,6 +341,7 @@ class Refer360Batch():
           'pixel_map': state[1],
           'latitude': self.env.cameras[ii].lat,
           'longitude': self.env.cameras[ii].lng,
+          'neighbors': self.env.cameras[ii].neighbors,
       })
     im_batch = torch.cat(im_stack, 0).cuda()
     return im_batch, infos

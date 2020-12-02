@@ -70,6 +70,8 @@ def get_train_rl():
                       action='store_true', help='Print to a progressbar or lines in stdout')
   parser.add_argument('--degrees', type=int, default=15,
                       help='degrees in FoV change, default=15')
+  parser.add_argument('--use-look-ahead',
+                      action='store_true', help='Use look ahead')
   parser.add_argument('--oracle-mode',
                       action='store_true', help='Oracle Mode')
   parser.add_argument('--random-agent',
@@ -100,6 +102,8 @@ def get_train_rl():
                       'the model would be trained from scratch. If --fromScratch is'
                       ' not specified, the model would load BERT-pre-trained weights by'
                       ' default. ')
+  parser.add_argument('--use-detectron',
+                      action='store_true', help='Use detectron for visual input')
 
   return parser
 

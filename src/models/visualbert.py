@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from utils import PositionalEncoding
+from model_utils import PositionalEncoding
 
 
 class VisualBert(nn.Module):

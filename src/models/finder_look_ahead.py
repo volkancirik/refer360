@@ -1,13 +1,13 @@
 '''Finder is a model with actor, memory, and localizer modules.
 '''
 import torchvision.models as models
-
+import torch
 import torch.nn as nn
 from models.td_models import clones
-from model_utils import vectorize_seq
+from utils import vectorize_seq
 LOG_ZERO_PROB = -10000
 
-from get_localizer import get_localizer
+from model_utils import get_localizer
 
 
 class Actor(nn.Module):
@@ -38,16 +38,17 @@ class Actor(nn.Module):
     for ii in range(self.n_layers):
       act_inp = self.RELU(self.act[ii](act_inp))
       val_inp = self.RELU(self.val[ii](val_inp))
+
     return self.act2out(act_inp), self.val2out(val_inp)
 
 
-class Finder(nn.Module):
+class FinderLookAhead(nn.Module):
   """Finder with localizer, actor, and memory modules.
   """
 
   def __init__(self, args, vocab, n_actions=5):
 
-    super(Finder, self).__init__()
+    super(FinderLookAhead, self).__init__()
     self.vocab = vocab
     self.n_actions = n_actions
     self.n_vocab = len(vocab)
@@ -76,6 +77,11 @@ class Finder(nn.Module):
     self.use_masks = args.use_masks
     self.use_raw_image = args.use_raw_image
 
+    self.neighbor2pred = nn.Linear(64, 1)
+    self.act2out = nn.Linear(10000, 1)
+    self.loc2pred = nn.Linear(10000, 1)
+    self.val2out = nn.Linear(n_actions, 1)
+
   def forward(self, observations, rnn_hidden=None):
 
     instruction = [' '.join(list(sum(o['refexps'], [])))
@@ -103,17 +109,35 @@ class Finder(nn.Module):
     obs = loc_pred.reshape(
         self.batch_size, loc_pred.size(1) * loc_pred.size(2))
 
-    state = self.obs2state(obs)
-    state_now, rnn_hidden = self.memory(
-        state.unsqueeze(0), rnn_hidden)
-    state_now = state_now.squeeze(0)
+    neighbors = [o['neighbors']
+                 for o in observations['observations']]
+    all_neighbors = torch.cat(neighbors, 0)
+    neighbors_feat = self.cnn(all_neighbors)
+    neighbors_flat = neighbors_feat.reshape(
+        self.batch_size * 4, 64, loc_pred.size(1) * loc_pred.size(2)).permute(0, 2, 1)
 
-    action_logits, state_values = self.actor(state_now)
+    neighbors_pred = self.neighbor2pred(neighbors_flat).squeeze()
+    neighbors_stack = neighbors_pred.reshape(self.batch_size, 4, 10000)
+    obs_stack = obs.unsqueeze(1).repeat(1, 4, 1)
+
+    fused = neighbors_stack * obs_stack
+    neighbors_scores = self.act2out(fused).squeeze(2)
+    pred_score = self.loc2pred(obs)
+
+    action_logits = torch.cat([pred_score, neighbors_scores], 1)
+    state_values = self.val2out(action_logits)
+
+    # state = self.obs2state(obs)
+    # state_now, rnn_hidden = self.memory(
+    #     state.unsqueeze(0), rnn_hidden)
+    # state_now = state_now.squeeze(0)
+
+    # action_logits,a state_values = self.actor(state_now, neighbors)
 
     out = {}
     out['action_logits'] = action_logits
     out['state_values'] = state_values
     out['loc_pred'] = loc_pred
-    out['rnn_hidden'] = rnn_hidden
+    out['rnn_hidden'] = None
 
     return out

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from models.unet_3 import Unet3
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from utils import PositionalEncoding, vectorize_seq, FOV_EMB_SIZE, build_fov_embedding
+from model_utils import vectorize_seq, PositionalEncoding, FOV_EMB_SIZE, build_fov_embedding
 
 
 class VisionOnly(nn.Module):

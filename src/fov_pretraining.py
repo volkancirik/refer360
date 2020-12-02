@@ -1,7 +1,8 @@
 from collections import defaultdict
 from torch.utils.data import Dataset
 from utils import DIRECTIONS, CAT2LOC
-from utils import get_objects_classes, load_obj_tsv
+from utils import get_object_dictionaries
+from model_utils import load_obj_tsv
 from operator import itemgetter
 import numpy as np
 import os
@@ -99,7 +100,7 @@ class FoVPretrainingDataset(Dataset):
                use_objects=False,
                ignore_list=''):
 
-    vg2idx, idx2vg, obj_classes = get_objects_classes(obj_dict_file)
+    vg2idx, idx2vg, obj_classes = get_object_dictionaries(obj_dict_file)
     self.vg2idx = vg2idx
     self.idx2vg = idx2vg
     self.obj_classes = obj_classes

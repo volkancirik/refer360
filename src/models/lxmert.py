@@ -1,4 +1,5 @@
 import torch
+import torchvision.models as models
 import torch.nn as nn
 import os
 
@@ -23,6 +24,9 @@ from detectron2.structures import Boxes, Instances
 
 MIN_BOXES = 36
 MAX_BOXES = 36
+
+BOXES = [[x, y, x+16, y + 16]
+         for x in range(0, 400, 16) for y in range(0, 400, 16)]
 
 
 def fast_rcnn_inference_single_image(
@@ -149,29 +153,35 @@ class LXMERTLocalizer(nn.Module):
     )
     self.logit_fc.apply(self.lxrt_encoder.model.init_bert_weights)
 
-    data_path = DATA_PATH
+    self.use_detectron = args.use_detectron
 
-    vg_classes = []
-    with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
-      for object in f.readlines():
-        vg_classes.append(object.split(',')[0].lower().strip())
+    if self.use_detectron:
+      print('Detectron will be used.')
+      data_path = DATA_PATH
 
-    MetadataCatalog.get("vg").thing_classes = vg_classes
-    yaml_file = DETECTRON2_YAML
-    cfg = get_cfg()
-    cfg.merge_from_file(yaml_file
-                        )
-    cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
-    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
-    # VG Weight
-    cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
-    self.predictor = DefaultPredictor(cfg)
+      vg_classes = []
+      with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
+        for object in f.readlines():
+          vg_classes.append(object.split(',')[0].lower().strip())
 
-  def forward(self, inp):
+      MetadataCatalog.get("vg").thing_classes = vg_classes
+      yaml_file = DETECTRON2_YAML
+      cfg = get_cfg()
+      cfg.merge_from_file(yaml_file
+                          )
+      cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
+      cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
+      cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
+      # VG Weight
+      cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
+      self.predictor = DefaultPredictor(cfg)
+    else:
+      print('Resnet will be used.')
+      self.cnn = nn.Sequential(
+          *(list(models.resnet18(pretrained=True).children())[:-3])).cuda().eval()
+      self.cnn2box = nn.Linear(256, 2048)
 
-    instruction = inp['instruction']
-    imgs = inp['imgs']
+  def get_det2_boxes(self, imgs):
 
     instances_list, features_list = extract_detectron2_features(
         self.predictor, imgs)
@@ -187,6 +197,31 @@ class LXMERTLocalizer(nn.Module):
 
     boxes[..., (0, 2)] /= 400.
     boxes[..., (1, 3)] /= 400.
+    return feats, boxes
+
+  def get_cnn_boxes(self, im_batch):
+    batch_size = im_batch.size(0)
+
+    regions = self.cnn(im_batch)
+
+    feats = self.cnn2box(regions.view(
+        batch_size, 256, 25*25).permute(0, 2, 1))
+
+    boxes = torch.tensor(BOXES).unsqueeze(
+        0).repeat(feats.size(0), 1, 1).float().cuda()
+    boxes[..., (0, 2)] /= 400.
+    boxes[..., (1, 3)] /= 400.
+
+    return feats, boxes
+
+  def forward(self, inp):
+
+    instruction = inp['instruction']
+
+    if self.use_detectron:
+      feats, boxes = self.get_det2_boxes(inp['imgs'])
+    else:
+      feats, boxes = self.get_cnn_boxes(inp['im_batch'])
 
     x = self.lxrt_encoder(instruction, (feats, boxes))
     batch_size = x.size(0)

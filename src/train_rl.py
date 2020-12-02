@@ -1,6 +1,7 @@
 """
 RL agent playing the game
 """
+import paths
 from env import Refer360Batch
 from src.utils import get_model
 from arguments import get_train_rl
@@ -332,6 +333,7 @@ def main():
                                 splits=['train'],
                                 seed=args.seed,
                                 degrees=args.degrees,
+                                use_look_ahead=args.use_look_ahead,
                                 oracle_mode=args.oracle_mode,
                                 images=args.trn_images,
                                 prepare_vocab=True)
@@ -339,6 +341,7 @@ def main():
                                 splits=['validation.unseen'],
                                 seed=args.seed,
                                 degrees=args.degrees,
+                                use_look_ahead=args.use_look_ahead,
                                 oracle_mode=args.oracle_mode,
                                 images=args.val_images)
 

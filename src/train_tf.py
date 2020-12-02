@@ -1,7 +1,9 @@
 """
 TF agent playing the game
 """
-from utils import get_model
+import paths
+
+from get_model import get_model
 from env import Refer360Batch
 
 from arguments import get_train_rl
@@ -17,7 +19,7 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from collections import defaultdict
-from utils import smoothed_gaussian
+from model_utils import smoothed_gaussian
 
 from train_rl import select_action
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])

@@ -1,9 +1,5 @@
 import paths
 
-from collections import defaultdict
-import json
-from operator import itemgetter
-
 import cv2
 import sys
 import torch
@@ -20,9 +16,9 @@ import os
 from scipy.spatial import Delaunay
 
 from utils import rad2degree
-from utils import get_det2_features
+from model_utils import get_det2_features
 from utils import generate_fovs
-from utils import generate_grid
+
 
 torch.backends.cudnn.benchmark = True
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -243,99 +239,9 @@ def run_generate_graph():
     generate_fovs(image_path, node_path, fov_prefix)
 
 
-def run_generate_grid():
-
-  image_list = [line.strip()
-                for line in open(sys.argv[1])]  # ../data/imagelist.txt
-  image_root = sys.argv[2]  # ../data/refer360images
-  out_root = sys.argv[3]  # ../data/grid_data_30
-  degree = int(sys.argv[4])  # 30
-
-  if not os.path.exists(out_root):
-    try:
-      os.makedirs(out_root)
-    except:
-      print('Cannot create folder {}'.format(out_root))
-      quit(1)
-
-  pbar = tqdm(image_list)
-  for fname in pbar:
-    image_path = os.path.join(image_root, fname)
-    pano = fname.split('/')[-1].split('.')[0]
-    nodes, canvas = generate_grid(degree=degree)
-
-    node_path = os.path.join(
-        out_root, '{}.npy'.format(pano))
-
-    np.save(open(node_path, 'wb'), nodes)
-
-    fov_prefix = os.path.join(
-        out_root, '{}.fov'.format(pano))
-
-    generate_fovs(image_path, node_path, fov_prefix)
-
-
-def generate_object_dictionaries():
-  usage = '''Generates json file with dictionaries of visualgenome object ids to refer360 object ids conversions.
-  PYTHONPATH=.. python generate_graph.py ../data/imagelist.txt ../data/graph_data/  ../data/vg_object_dictionaries.all.json all
-
-  PYTHONPATH=.. python generate_graph.py ../data/imagelist.txt ../data/graph_data/  ../data/vg_object_dictionaries.[table,chair].json table,chair
-'''
-  if len(sys.argv) != 5:
-    print(usage)
-    quit(1)
-  data_path = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
-  vg_classes = []
-  with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
-    for object in f.readlines():
-      vg_classes.append(object.split(',')[0].lower().strip())
-
-  image_list = [line.strip()
-                for line in open(sys.argv[1])]  # ../data/imagelist.txt
-  out_root = sys.argv[2]  # ../data/graph_data
-
-  if not os.path.exists(out_root):
-    try:
-      os.makedirs(out_root)
-    except:
-      print('Cannot create folder {}'.format(out_root))
-      quit(1)
-
-  counts = defaultdict(int)
-  pbar = tqdm(image_list)
-  for fname in pbar:
-    pano = fname.split('/')[-1].split('.')[0]
-    node_path = os.path.join(
-        out_root, '{}.npy'.format(pano))
-
-    nodes = np.load(node_path, allow_pickle=True)[()]
-    for node in nodes:
-      vg_id = nodes[node]['obj_id']
-      counts[vg_id] += 1
-
-  sorted_counts = sorted(counts.items(), key=itemgetter(1))[::-1]
-
-  min_th = 5
-  max_th = 50000
-
-  vg2idx = {}
-  idx2vg = {}
-
-  idx = 0
-  out_file = sys.argv[3]  # '../data/vg_object_dictionaries.all.json'
-  include = set(sys.argv[4].split(','))  # all or table,chair
-
-  for ii, (vg_idx, cnt) in enumerate(sorted_counts):
-    if min_th <= cnt <= max_th and (vg_classes[vg_idx] in include or sys.argv[4] == 'all'):
-      print(idx, cnt, vg_classes[vg_idx])
-      vg2idx[vg_idx] = idx
-      idx2vg[idx] = vg_idx
-      idx += 1
-  json.dump({'vg2idx': vg2idx,
-             'idx2vg': idx2vg}, open(out_file, 'w'))
-
-
 if __name__ == '__main__':
+  '''Example run:
+       python generate_graph.py ../data/imagelist.txt ../data/refer360images ../data/graph_data_top60
+  '''
+
   run_generate_graph()
-  # run_generate_grid()
-  # generate_object_dictionaries()

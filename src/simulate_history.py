@@ -27,17 +27,7 @@ from utils import add_overlay
 import numpy as np
 import os
 
-
-def get_det2_features(detections):
-  boxes = []
-  obj_classes = []
-
-  for box, obj_class in zip(detections.pred_boxes, detections.pred_classes):
-    box = box.cpu().detach().numpy()
-    boxes.append(box)
-    obj_class = obj_class.cpu().detach().numpy().tolist()
-    obj_classes.append(obj_class)
-  return boxes, obj_classes
+from model_utils import get_det2_features
 
 
 if __name__ == '__main__':

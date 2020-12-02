@@ -1,75 +1,182 @@
-from models.td_models import Concat
-from models.td_models import ConcatConv
-from models.td_models import RNN2Conv
-from models.td_models import LingUNet
-from models.visualbert import VisualBert
-from models.lxmert import LXMERTLocalizer
-
+'''Utils for models and manipulating tensors.
+'''
 import torch
+import torch.nn as nn
+#import torch.nn.functional as F
+import math
+import base64
+import time
+import csv
+import sys
+
 
 from detectron2.modeling.postprocessing import detector_postprocess
 from detectron2.modeling.roi_heads.fast_rcnn import FastRCNNOutputs
 from torchvision.ops import nms
 from detectron2.structures import Boxes, Instances
 import numpy as np
+
+import io
+import PIL.Image
+from matplotlib.pyplot import cm
+import matplotlib.pyplot as plt
+from torchvision.transforms import ToTensor
+
+
 MIN_BOXES = 36
 MAX_BOXES = 36
 
+FOV_EMB_SIZE = 128
 
-def get_localizer(args, n_vocab):
-  '''Return a localizer module.
+# BUTD features fields for FoVs
+csv.field_size_limit(sys.maxsize)
+FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
+              "attrs_id", "attrs_conf", "num_boxes", "boxes", "features"]
+
+
+def coord_gaussian(x, y, gt_x, gt_y, sigma):
+  '''Return the gaussian-weight of a pixel based on distance.
   '''
-  args.use_raw_image = False
-  rnn_args = {}
-  rnn_args['input_size'] = n_vocab
-  rnn_args['embed_size'] = args.n_emb
-  rnn_args['rnn_hidden_size'] = int(args.n_hid /
-                                    2) if args.bidirectional else args.n_hid
-  rnn_args['num_rnn_layers'] = args.n_layers
-  rnn_args['embed_dropout'] = args.dropout
-  rnn_args['bidirectional'] = args.bidirectional
-  rnn_args['reduce'] = 'last' if not args.bidirectional else 'mean'
+  pixel_val = (1 / (2 * np.pi * sigma ** 2)) * \
+      np.exp(-((x - gt_x) ** 2 + (y - gt_y) ** 2) / (2 * sigma ** 2))
+  return pixel_val if pixel_val > 1e-5 else 0.0
 
-  cnn_args = {}
-  out_layer_args = {'linear_hidden_size': args.n_hid,
-                    'num_hidden_layers': args.n_layers}
-  image_channels = args.n_img_channels
 
-  if args.model == 'concat':
-    model = Concat(rnn_args, out_layer_args,
-                   image_channels=image_channels)
+def gaussian_target(gt_x, gt_y, sigma=3.0,
+                    width=400, height=400):
+  '''Based on https://github.com/lil-lab/touchdown/tree/master/sdr
+  '''
+  target = torch.tensor([[coord_gaussian(x, y, gt_x, gt_y, sigma)
+                          for x in range(width)] for y in range(height)]).float().cuda()
+  return target
 
-  elif args.model == 'concat_conv':
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'num_conv_layers': args.n_layers, 'conv_dropout': args.dropout}
-    model = ConcatConv(rnn_args, cnn_args, out_layer_args,
-                       image_channels=image_channels)
 
-  elif args.model == 'rnn2conv':
-    assert args.n_layers is not None
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'conv_dropout': args.dropout}
-    model = RNN2Conv(rnn_args, cnn_args, out_layer_args,
-                     args.n_layers,
-                     image_channels=image_channels)
+def smoothed_gaussian(pred, gt_x, gt_y,
+                      sigma=3.0,
+                      height=400, width=400):
+  '''KLDivLoss for pixel prediction.
+  '''
 
-  elif args.model == 'lingunet':
-    assert args.n_layers is not None
-    cnn_args = {'kernel_size': 5, 'padding': 2,
-                'deconv_dropout': args.dropout}
-    model = LingUNet(rnn_args, cnn_args, out_layer_args,
-                     m=args.n_layers,
-                     image_channels=image_channels)
-  elif args.model == 'visualbert':
-    args.use_masks = True
-    model = VisualBert(args, n_vocab)
-  elif args.model == 'lxmert':
-    args.use_raw_image = True
-    model = LXMERTLocalizer(args)
-  else:
-    raise NotImplementedError('Model {} is not implemented'.format(args.model))
-  print('using {} localizer'.format(args.model))
-  return model.cuda()
+  loss_func = nn.KLDivLoss(reduction='sum')
+
+  target = gaussian_target(gt_x, gt_y,
+                           sigma=sigma, width=width, height=height)
+  loss = loss_func(pred.unsqueeze(0), target.unsqueeze(0))
+  return loss
+
+
+def get_det2_features(detections):
+  boxes = []
+  obj_classes = []
+  scores = []
+  for box, obj_class, score in zip(detections.pred_boxes, detections.pred_classes, detections.scores):
+    box = box.cpu().detach().numpy()
+    boxes.append(box)
+    obj_class = obj_class.cpu().detach().numpy().tolist()
+    obj_classes.append(obj_class)
+    scores.append(score.item())
+
+  return boxes, obj_classes, scores
+
+
+class PositionalEncoding(nn.Module):
+  "Implement the PE function."
+
+  def __init__(self, d_model, dropout, max_len=5000):
+    super(PositionalEncoding, self).__init__()
+    self.dropout = nn.Dropout(p=dropout)
+
+    # Compute the positional encodings once in log space.
+    pe = torch.zeros(max_len, d_model)
+    position = torch.arange(0, max_len).unsqueeze(1).float()
+    div_term = torch.exp(torch.arange(0, d_model, 2).float() *
+                         -(math.log(10000.0) / d_model))
+
+    size_sin = pe[:, 0::2].size()
+    pe[:, 0::2] = torch.sin(position * div_term)[:size_sin[0], : size_sin[1]]
+    size_cos = pe[:, 1::2].size()
+    pe[:, 1::2] = torch.cos(position * div_term)[:size_cos[0], : size_cos[1]]
+    pe = pe.unsqueeze(0)
+    self.register_buffer('pe', pe)
+
+  def forward(self, x):
+    pos_info = self.pe[:, : x.size(1)].clone().detach().requires_grad_(True)
+    x = x + pos_info
+    return self.dropout(x)
+
+
+def load_obj_tsv(fname, topk=None):
+  """Source: https://github.com/airsplay/lxmert/blob/f65a390a9fd3130ef038b3cd42fe740190d1c9d2/src/utils.py#L16
+  Load object features from tsv file.
+
+    :param fname: The path to the tsv file.
+    :param topk: Only load features for top K images (lines) in the tsv file.
+        Will load all the features if topk is either -1 or None.
+    :return: A list of image object features where each feature is a dict.
+        See FILENAMES above for the keys in the feature dict.
+    """
+  data = []
+  start_time = time.time()
+  print("Start to load Faster-RCNN detected objects from %s" % fname)
+  with open(fname) as f:
+    reader = csv.DictReader(f, FIELDNAMES, delimiter="\t")
+    for i, item in enumerate(reader):
+
+      for key in ['img_h', 'img_w', 'num_boxes']:
+        item[key] = int(item[key])
+
+      boxes = item['num_boxes']
+      decode_config = [
+          ('objects_id', (boxes, ), np.int64),
+          ('objects_conf', (boxes, ), np.float32),
+          ('attrs_id', (boxes, ), np.int64),
+          ('attrs_conf', (boxes, ), np.float32),
+          ('boxes', (boxes, 4), np.float32),
+          ('features', (boxes, -1), np.float32),
+      ]
+      for key, shape, dtype in decode_config:
+        item[key] = np.frombuffer(base64.b64decode(item[key]), dtype=dtype)
+        item[key] = item[key].reshape(shape)
+        item[key].setflags(write=False)
+
+      data.append(item)
+      if topk is not None and len(data) == topk:
+        break
+  elapsed_time = time.time() - start_time
+  print("Loaded %d images in file %s in %d seconds." %
+        (len(data), fname, elapsed_time))
+  return data
+
+
+def build_fov_embedding(latitude, longitude):
+  """
+  Position embedding:
+  latitude 64D + longitude 64D
+  1) latitude: [sin(latitude) for _ in range(1, 33)] +
+  [cos(latitude) for _ in range(1, 33)]
+  2) longitude: [sin(longitude) for _ in range(1, 33)] +
+  [cos(longitude) for _ in range(1, 33)]
+  """
+  quarter = int(FOV_EMB_SIZE / 4)
+  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).cuda()
+
+  embedding[:,  0:quarter*1] = torch.sin(latitude)
+  embedding[:, quarter*1:quarter*2] = torch.cos(latitude)
+  embedding[:, quarter*2:quarter*3] = torch.sin(longitude)
+  embedding[:, quarter*3:quarter*4] = torch.cos(longitude)
+
+  return embedding
+
+
+def weights_init_uniform_rule(m):
+  classname = m.__class__.__name__
+  # for every Linear layer in a model..
+  if classname.find('Linear') != -1:
+    # get the number of the inputs
+    n = m.in_features
+    y = 1.0/np.sqrt(n)
+    m.weight.data.uniform_(-y, y)
+    m.bias.data.fill_(0)
 
 
 def fast_rcnn_inference_single_image(
@@ -174,3 +281,163 @@ def extract_detectron2_features(detector, raw_images):
       raw_instances_list.append(raw_instances)
 
     return raw_instances_list, roi_features_list
+
+
+def compute_precision_with_logits(logits, labels_vector,
+                                  precision_k=1,
+                                  mask=None):
+  labels = torch.zeros(*logits.size()).cuda()
+  for ll in range(logits.size(0)):
+    labels[ll, :].scatter_(0, labels_vector[ll], 1)
+
+  adjust_score = False
+  if type(mask) != type(None):
+    labels = labels * mask.unsqueeze(0).expand(labels.size())
+    adjust_score = True
+  one_hots = torch.zeros(*labels.size()).cuda()
+  logits = torch.sort(logits, 1, descending=True)[1]
+  one_hots.scatter_(1, logits[:, :precision_k], 1)
+
+  batch_size = logits.size(0)
+  scores = ((one_hots * labels).sum(1) >= 1).float().sum() / batch_size
+  if adjust_score:
+    valid_rows = (labels.sum(1) > 0).sum(0)
+    if valid_rows == 0:
+      scores = torch.tensor(1.0).cuda()
+    else:
+      hit = (scores * batch_size)
+      scores = hit / valid_rows
+  return scores
+
+
+def vectorize_seq(sequences, vocab, emb_dim, cuda=False, permute=False):
+  '''Generates one-hot vectors and masks for list of sequences.
+  '''
+  vectorized_seqs = [vocab.encode(sequence) for sequence in sequences]
+
+  seq_lengths = torch.tensor(list(map(len, vectorized_seqs)))
+  seq_tensor = torch.zeros((len(vectorized_seqs), seq_lengths.max())).long()
+  max_length = seq_tensor.size(1)
+
+  emb_mask = torch.zeros(len(seq_lengths), max_length, emb_dim)
+  for idx, (seq, seqlen) in enumerate(zip(vectorized_seqs, seq_lengths)):
+    seq_tensor[idx, :seqlen] = torch.tensor(seq)
+    emb_mask[idx, :seqlen, :] = 1.
+
+  idx = torch.arange(max_length).unsqueeze(0).expand(seq_tensor.size())
+  len_expanded = seq_lengths.unsqueeze(1).expand(seq_tensor.size())
+  mask = (idx >= len_expanded)
+
+  if permute:
+    seq_tensor = seq_tensor.permute(1, 0)
+    emb_mask = emb_mask.permute(1, 0, 2)
+  if cuda:
+    return seq_tensor.cuda(), mask.cuda(), emb_mask.cuda(), seq_lengths.cuda()
+  return seq_tensor, mask, emb_mask, seq_lengths
+
+
+class F1_Loss(nn.Module):
+  '''Calculate F1 score. Can work with gpu tensors
+
+  The original implmentation is written by Michal Haltuf on Kaggle.
+
+  Returns
+  -------
+  torch.Tensor
+      `ndim` == 1. epsilon <= val <= 1
+
+  Reference
+  ---------
+  - https://www.kaggle.com/rejpalcz/best-loss-function-for-f1-score-metric
+  # sklearn.metrics.f1_score
+  - https://scikit-learn.org/stable/modules/generated/sklearn.metrics.f1_score.html
+  - https://discuss.pytorch.org/t/calculating-precision-recall-and-f1-score-in-case-of-multi-label-classification/28265/6
+  - http://www.ryanzhang.info/python/writing-your-own-loss-function-module-for-pytorch/
+  '''
+
+  def __init__(self, epsilon=1e-7,
+               num_classes=2):
+    super().__init__()
+    self.epsilon = epsilon
+    self.num_classes = num_classes
+
+  def forward(self, y_pred, y_true,):
+    assert y_pred.ndim == 2
+    assert y_true.ndim == 1
+    y_true = F.one_hot(y_true, self.num_classes).to(torch.float32)
+    y_pred = F.softmax(y_pred, dim=1)
+
+    tp = (y_true * y_pred).sum(dim=0).to(torch.float32)
+    # tn = ((1 - y_true) * (1 - y_pred)).sum(dim=0).to(torch.float32)
+    fp = ((1 - y_true) * y_pred).sum(dim=0).to(torch.float32)
+    fn = (y_true * (1 - y_pred)).sum(dim=0).to(torch.float32)
+
+    precision = tp / (tp + fp + self.epsilon)
+    recall = tp / (tp + fn + self.epsilon)
+
+    f1 = 2 * (precision*recall) / (precision + recall + self.epsilon)
+    f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
+    return 1 - f1.mean()
+
+
+class F1_Binary_Loss(nn.Module):
+  '''F1 for binary classification.
+  '''
+
+  def __init__(self, epsilon=1e-7):
+    super().__init__()
+    self.epsilon = epsilon
+
+  def forward(self, y_pred, y_true):
+    assert y_pred.ndim == 2
+    assert y_true.ndim == 2
+
+    y_true = y_true.to(torch.float32)
+    y_pred = y_pred.to(torch.float32)
+
+    tp = (y_true * y_pred).sum(dim=0).to(torch.float32)
+    tn = ((1 - y_true) * (1 - y_pred)).sum(dim=0).to(torch.float32)
+    fp = ((1 - y_true) * y_pred).sum(dim=0).to(torch.float32)
+    fn = (y_true * (1 - y_pred)).sum(dim=0).to(torch.float32)
+
+    precision = tp / (tp + fp + self.epsilon)
+    recall = tp / (tp + fn + self.epsilon)
+
+    f1 = 2 * (precision*recall) / (precision + recall + self.epsilon)
+    f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
+
+    return f1.mean()
+
+
+def get_confusion_matrix_image(labels, matrix, title='Title', tight=False, cmap=cm.copper):
+
+  fig, ax = plt.subplots()
+  _ = ax.imshow(matrix, cmap=cmap)
+
+  ax.set_xticks(np.arange(len(labels)))
+  ax.set_yticks(np.arange(len(labels)))
+  ax.set_xticklabels(labels)
+  ax.set_yticklabels(labels)
+
+  # Rotate the tick labels and set their alignment.
+  plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+           rotation_mode="anchor")
+
+  # Loop over data dimensions and create text annotations.
+
+  for i in range(len(labels)):
+    for j in range(len(labels)):
+
+      _ = ax.text(j, i, '{:0.2f}'.format(matrix[i, j]),
+                  ha="center", va="center", color="w")
+
+  ax.set_title(title)
+  if tight:
+    fig.tight_layout()
+  buf = io.BytesIO()
+  plt.savefig(buf, format='jpeg')
+  buf.seek(0)
+  image = PIL.Image.open(buf)
+  image = ToTensor()(image)
+  plt.close('all')
+  return image

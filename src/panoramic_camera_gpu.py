@@ -109,11 +109,13 @@ class PanoramicCameraGPU:
     img = ToPILImage()(image)
     return np.array(img)
 
-  def get_map(self):
+  def get_map(self, use_tensor=False):
     lat_map = (self.lat_map / self._width) * 360.0 - 180.0
     lng_map = ((self.lng_map / self._height) * 180.0 - 90.0) * -1.0
 
-    return torch.stack((lat_map, lng_map), axis=2)
+    if use_tensor:
+      return torch.stack((lat_map, lng_map), axis=2)
+    return torch.stack((lat_map, lng_map), axis=2).detach().cpu().numpy()
 
   def get_pixel_map(self):
     """Return the pixel map.
@@ -138,7 +140,7 @@ class PanoramicCameraGPU:
     """Return coordinates for given lng,lat
     """
     coords = PanoramicCameraGPU.find_nearest(
-        self.get_map(), (lat, lng))
+        self.get_map(use_tensor=True), (lat, lng))
 
     # given lng,lat may not be in the FoV
     if coords[0] == 0 or coords[0] == self.output_image_w - 1 or coords[1] == 0 or coords[1] == self.output_image_h - 1:

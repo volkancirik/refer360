@@ -1,7 +1,8 @@
 """
 RL agent playing the game
 """
-from src.utils import get_model
+import paths
+from get_model import get_model
 from env import Refer360Batch
 
 import numpy as np

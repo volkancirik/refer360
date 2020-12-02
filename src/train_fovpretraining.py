@@ -1,7 +1,7 @@
 """
 Pre-training VisualBert by predicting nearby objects.
 """
-
+import paths
 from arguments import get_train_fovpretraining
 
 import numpy as np
@@ -22,13 +22,13 @@ from fov_pretraining import FoVTask4
 
 from models import VisionOnly
 from models import LXMERTModel
-from utils import F1_Binary_Loss
 
 from utils import DIRECTIONS
-from utils import get_confusion_matrix_image
-from utils import get_objects_classes
-from utils import compute_precision_with_logits
-from utils import weights_init_uniform_rule
+from utils import get_object_dictionaries
+from model_utils import get_confusion_matrix_image
+from model_utils import F1_Binary_Loss
+from model_utils import compute_precision_with_logits
+from model_utils import weights_init_uniform_rule
 
 
 def get_fovpretraining_model(args, n_objects, n_directions,
@@ -319,7 +319,7 @@ def main():
     for object in f.readlines():
       vg_classes.append(object.split(',')[0].lower().strip())
 
-  vg2idx, idx2vg, obj_classes = get_objects_classes(args.obj_dict_file)
+  vg2idx, idx2vg, obj_classes = get_object_dictionaries(args.obj_dict_file)
 
   model = get_fovpretraining_model(
       args, len(vg2idx), len(DIRECTIONS[args.direction]))

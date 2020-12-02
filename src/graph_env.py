@@ -2,15 +2,15 @@
 Batched refer360 environment
 '''
 import cv2
-from dict import Dictionary
-from utils import load_datasets
-from utils import smoothed_gaussian
-from utils import gaussian_target
+
+
+from model_utils import smoothed_gaussian
+from model_utils import gaussian_target
 from panoramic_camera import PanoramicCamera as camera
-from torchvision import transforms
+
 import numpy as np
 import torch
-from collections import defaultdict
+
 EPS = 1e-10
 FOV_SIZE = 512
 
