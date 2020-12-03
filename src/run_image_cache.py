@@ -6,11 +6,12 @@ from torchvision import transforms
 from tqdm import tqdm
 from fov_pretraining import load_fovpretraining_splits
 from PIL import Image
+import sys
 
 
 def compute_image_caches(splits,
-                         task='fov_pretraining',
-                         data_root='fov_pretraining_table,chair,door,television,car_grid',
+                         task='',
+                         data_root='',
                          images='all',
                          extension='.jpg'):
 
@@ -30,10 +31,11 @@ def compute_image_caches(splits,
     newmodel.requires_grad = False
   preprocess = transforms.Compose([
       transforms.ToTensor(),
-      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+      transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                           std=[0.229, 0.224, 0.225]),
   ])
 
-  print('>>>', len(files), len(set(files)))
+  print('# of files {} # of unique files {}'.format(len(files), len(set(files))))
   pbar = tqdm(list(set(files)))
   for filename in pbar:
     img_feat_path = filename.replace(extension, '.feat.npy')
@@ -56,5 +58,5 @@ if __name__ == '__main__':
   from utils import SPLITS
   compute_image_caches(SPLITS,
                        task='fov_pretraining',
-                       data_root='../data/fov_pretraining_table,chair,door,television,car_grid',
+                       data_root=sys.argv[1]
                        images='all')
