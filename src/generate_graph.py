@@ -51,7 +51,7 @@ def generate_graph(image_path, predictor, vg_classes,
                    full_w=4552,
                    full_h=2276,
                    left_w=128,
-                   topk=60):
+                   topk=100):
   font = cv2.FONT_HERSHEY_SIMPLEX
   THRESHOLD = 50
   size = 20
@@ -76,7 +76,7 @@ def generate_graph(image_path, predictor, vg_classes,
     cam.load_img(image_path)
 
     for lng in range(-45, 90, 45):
-      for lat in range(-180, 180, 30):
+      for lat in range(-165, 180, 30):
         cam.look(lat, lng)
         pixel_map = cam.get_map()
         img = cam.get_image()
@@ -204,7 +204,7 @@ def run_generate_graph():
   cfg.merge_from_file(yaml_file)
   cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 100
   cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.4
+  cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.6
 
   cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe.pkl"
   predictor = DefaultPredictor(cfg)
