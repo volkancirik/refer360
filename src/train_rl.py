@@ -3,7 +3,7 @@ RL agent playing the game
 """
 import paths
 from env import Refer360Batch
-from src.utils import get_model
+from get_model import get_model
 from arguments import get_train_rl
 import numpy as np
 from collections import namedtuple

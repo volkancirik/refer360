@@ -281,18 +281,26 @@ def main():
     raise NotImplementedError()
 
   training_split = ['train']
-  validation_split = training_split if args.debug > 0 else [
+  validation_unseen_split = training_split if args.debug > 0 else [
       'validation.unseen']
+  validation_seen_split = training_split if args.debug > 0 else [
+      'validation.seen']
+
   trn_dataset = Task(training_split, args.direction,
                      data_root=args.data_root,
                      obj_dict_file=args.obj_dict_file,
                      use_objects=args.model in set(['lxmert']),
                      ignore_list=args.ignore_list)
-  val_dataset = Task(validation_split, args.direction,
-                     data_root=args.data_root,
-                     obj_dict_file=args.obj_dict_file,
-                     use_objects=args.model in set(['lxmert']),
-                     ignore_list=args.ignore_list)
+  val_seen_dataset = Task(validation_seen_split, args.direction,
+                          data_root=args.data_root,
+                          obj_dict_file=args.obj_dict_file,
+                          use_objects=args.model in set(['lxmert']),
+                          ignore_list=args.ignore_list)
+  val_unseen_dataset = Task(validation_unseen_split, args.direction,
+                            data_root=args.data_root,
+                            obj_dict_file=args.obj_dict_file,
+                            use_objects=args.model in set(['lxmert']),
+                            ignore_list=args.ignore_list)
 
   weights = [0] * len(DIRECTIONS[args.direction])
   for o in trn_dataset.labels.keys():
@@ -307,8 +315,13 @@ def main():
       shuffle=args.debug == 0
   )
 
-  val_iterator = DataLoader(
-      dataset=val_dataset,
+  val_seen_iterator = DataLoader(
+      dataset=val_seen_dataset,
+      batch_size=args.batch_size,
+      shuffle=args.debug == 0
+  )
+  val_unseen_iterator = DataLoader(
+      dataset=val_unseen_dataset,
       batch_size=args.batch_size,
       shuffle=args.debug == 0
   )
@@ -333,7 +346,8 @@ def main():
   os.makedirs(sample_path, exist_ok=True)
 
   tot_trn_iter = 0
-  tot_val_iter = 0
+  tot_val_seen_iter = 0
+  tot_val_unseen_iter = 0
 
   log_path = os.path.join(
       args.exp_dir, args.prefix + '/training.log')
@@ -358,23 +372,37 @@ def main():
 
     if epoch % args.val_freq == 0:
       val_log = 'val E{:2d}'.format(epoch)
-      val_metrics, n_iter = eval_epoch(val_iterator, model, optimizer, args,
-                                       update=False,
-                                       log_split=val_log,
-                                       split_name='val',
-                                       n_iter=tot_val_iter,
-                                       epoch=epoch,
-                                       writer=writer,
-                                       sample_path=sample_path,
-                                       obj_classes=obj_classes,
-                                       weights=weights,
-                                       most_freq=trn_dataset.most_freq,
-                                       debug=args.debug,
-                                       log_path=log_path)
-      tot_val_iter = n_iter
-      if val_metrics[args.metric] > best_val:
+      val_seen_metrics, n_iter = eval_epoch(val_seen_iterator, model, optimizer, args,
+                                            update=False,
+                                            log_split=val_log,
+                                            split_name='v_seen',
+                                            n_iter=tot_val_seen_iter,
+                                            epoch=epoch,
+                                            writer=writer,
+                                            sample_path=sample_path,
+                                            obj_classes=obj_classes,
+                                            weights=weights,
+                                            most_freq=trn_dataset.most_freq,
+                                            debug=args.debug,
+                                            log_path=log_path)
+      tot_val_seen_iter = n_iter
+      val_unseen_metrics, n_iter = eval_epoch(val_unseen_iterator, model, optimizer, args,
+                                              update=False,
+                                              log_split=val_log,
+                                              split_name='v_unseen',
+                                              n_iter=tot_val_unseen_iter,
+                                              epoch=epoch,
+                                              writer=writer,
+                                              sample_path=sample_path,
+                                              obj_classes=obj_classes,
+                                              weights=weights,
+                                              most_freq=trn_dataset.most_freq,
+                                              debug=args.debug,
+                                              log_path=log_path)
+      tot_val_unseen_iter = n_iter
+      if val_seen_metrics[args.metric] > best_val:
         print('\n UPDATING MODELS! \n')
-        best_val = val_metrics[args.metric]
+        best_val = val_seen_metrics[args.metric]
         torch.save(model, os.path.join(
             args.exp_dir, args.prefix + '/model.pt'))
 

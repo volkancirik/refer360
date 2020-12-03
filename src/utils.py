@@ -7,6 +7,7 @@ import numpy as np
 import os
 from tqdm import tqdm
 
+from PIL import Image
 from panoramic_camera_gpu import PanoramicCameraGPU as camera
 #from panoramic_camera import PanoramicCamera as camera
 
@@ -239,7 +240,9 @@ def generate_gt_moves(image_path, move_list, move_ids,
       fov_img = cam.get_image()
       fov_prefix = os.path.join(fov_root, '{}.gt_move.'.format(move_id))
       fov_file = fov_prefix + 'move{}.jpg'.format(kk)
-      cv2.imwrite(fov_file, fov_img)
+      #cv2.imwrite(fov_file, fov_img)
+      pil_img = Image.fromarray(fov_img)
+      pil_img.save(fov_file)
 
 
 def generate_fovs(image_path, node_path, fov_prefix,
@@ -258,8 +261,11 @@ def generate_fovs(image_path, node_path, fov_prefix,
     idx, lat, lng = nodes[n]['id'], nodes[n]['lat'], nodes[n]['lng']
     cam.look(lat, lng)
 
-    fov = cam.get_image()
-    cv2.imwrite(fov_prefix + '{}.jpg'.format(idx), fov)
+    fov_img = cam.get_image()
+    fov_file = fov_prefix + '{}.jpg'.format(idx)
+    #cv2.imwrite(fov_file, fov_img)
+    pil_img = Image.fromarray(fov_img)
+    pil_img.save(fov_file)
 
 
 def get_graph_hops(nodes, actions, image_path,
@@ -542,13 +548,6 @@ def dump_datasets(splits, image_categories, output_file,
               if any(directions):
                 data.append(mdatum)
         elif task == 'grid_fov_pretraining' and task_root != '':
-          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
-          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
-          fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
-          nodes = np.load(node_path, allow_pickle=True)[()]
-          fovs, graph_hops, new_nodes = get_graph_hops(nodes,
-                                                       instance['actions'],
-                                                       datum['pano'])
           grid_nodes, _ = generate_grid(degree=degree)
 
           for n in grid_nodes:

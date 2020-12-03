@@ -14,4 +14,5 @@ conda install -c conda-forge opencv=4.1.0 -y
 conda install tqdm -y
 conda install -c anaconda scipy -y
 conda install -c conda-forge spacy -y
+conda install seaborn -y
 python -m spacy download en_core_web_sm
