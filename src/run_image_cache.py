@@ -1,3 +1,4 @@
+import paths
 import cv2
 import numpy as np
 import torchvision.models as models
@@ -58,5 +59,5 @@ if __name__ == '__main__':
   from utils import SPLITS
   compute_image_caches(SPLITS,
                        task='fov_pretraining',
-                       data_root=sys.argv[1]
+                       data_root=sys.argv[1],
                        images='all')

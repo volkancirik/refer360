@@ -15,4 +15,5 @@ conda install tqdm -y
 conda install -c anaconda scipy -y
 conda install -c conda-forge spacy -y
 conda install seaborn -y
+conda install scikit-learn -y
 python -m spacy download en_core_web_sm
