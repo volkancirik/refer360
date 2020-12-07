@@ -549,6 +549,9 @@ def dump_datasets(splits, image_categories, output_file,
                 data.append(mdatum)
         elif task == 'grid_fov_pretraining' and task_root != '':
           grid_nodes, _ = generate_grid(degree=degree)
+          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+          nodes = np.load(node_path, allow_pickle=True)[()]
 
           for n in grid_nodes:
             node = grid_nodes[n]
