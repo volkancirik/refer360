@@ -25,7 +25,7 @@ class VisionOnly(nn.Module):
                fov_emb_mode=2):
     super(VisionOnly, self).__init__()
 
-    self.unet = Unet3(512, 4, hidden_size).cuda().eval()
+    self.unet = Unet3(2048, 4, hidden_size).cuda().eval()
 
     # actor's layer
     self.n_actions = n_actions

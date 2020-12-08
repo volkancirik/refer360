@@ -25,7 +25,7 @@ def compute_image_caches(splits,
   else:
     raise NotImplementedError()
 
-  resnetmodel = models.resnet18(pretrained=True).cuda()
+  resnetmodel = models.resnet152(pretrained=True).cuda()
   newmodel = torch.nn.Sequential(
       *(list(resnetmodel.children())[:-2])).cuda()
   for p in newmodel.parameters():
@@ -44,10 +44,7 @@ def compute_image_caches(splits,
     feats = []
 
     image_obj = Image.open(filename)
-    image_obj = cv2.cvtColor(
-        np.array(image_obj), cv2.COLOR_RGB2BGR).astype('uint8')
     img_tensor = preprocess(image_obj)
-
     feats = newmodel(img_tensor.cuda().unsqueeze(0)).squeeze(0)
     feats = feats.cpu().detach().numpy()
 

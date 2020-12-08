@@ -586,6 +586,47 @@ def dump_datasets(splits, image_categories, output_file,
 
             if any(directions):
               data.append(mdatum)
+        elif task == 'balanced_fov_pretraining' and task_root != '':
+          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+          nodes = np.load(node_path, allow_pickle=True)[()]
+
+          node_path = os.path.join(task_root, '{}.npy'.format(pano))
+          balanced_nodes = np.load(node_path, allow_pickle=True)[()]
+
+          for n in balanced_nodes:
+            node = balanced_nodes[n]
+
+            mdatum = {}
+            fov_id = node['id']
+            mdatum['fov_id'] = fov_id
+
+            mdatum['move_max'] = len(sentences)
+            mdatum['pano'] = datum['pano']
+            # mdatum['actionid'] = move_id
+            mdatum['annotationid'] = instance['annotationid']
+
+            lat, lng = node['lat'], node['lng']
+            mx, my = node['x'], node['y']
+            mdatum['latitude'] = lat
+            mdatum['longitude'] = lng
+            mdatum['x'] = mx
+            mdatum['y'] = my
+
+            mdatum['refexps'] = sentences
+            fov_file = os.path.join(
+                task_root, '{}.fov{}.jpg'.format(pano, fov_id))
+
+            mdatum['fov_file'] = fov_file
+            regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+            mdatum['regions'] = regions
+            mdatum['obj_list'] = obj_list
+
+            directions = [len(obj_list['canonical'][d]) > 0 for d in [
+                'up', 'down', 'left', 'right']]
+
+            if any(directions):
+              data.append(mdatum)
     data_list.append(data)
     pbar.close()
 
