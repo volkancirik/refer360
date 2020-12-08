@@ -7,8 +7,8 @@ from utils import load_datasets
 from model_utils import smoothed_gaussian
 from model_utils import gaussian_target
 from utils import rad2degree
-# from panoramic_camera import PanoramicCamera as camera
-from panoramic_camera_gpu import PanoramicCameraGPU as camera
+from panoramic_camera import PanoramicCamera as cpu_camera
+from panoramic_camera_gpu import PanoramicCameraGPU as gpu_camera
 from torchvision import transforms
 import numpy as np
 import torch
@@ -26,7 +26,8 @@ class EnvBatch():
                image_h=FOV_SIZE,
                image_w=FOV_SIZE,
                fov=90,
-               degrees=5):
+               degrees=5,
+               use_gpu_camera=False):
     '''Initialize camerase for a new batch of environment.
     '''
 
@@ -37,6 +38,13 @@ class EnvBatch():
                      4: (-self.degrees, 0),
                      }
 
+    if use_gpu_camera:
+      camera = gpu_camera
+      print('gpu camera will be used')
+    else:
+      print('cpu camera will be used')
+      camera = cpu_camera
+
     self.batch_size = batch_size
     self.image_w = image_w
     self.image_h = image_h
@@ -45,15 +53,9 @@ class EnvBatch():
     shape = (image_h, image_w)
     # set # of cameras batch_size
     self.cameras = [camera(fov=fov,
-                           output_image_shape=shape,
-                           use_tensor_image=False) for ii in range(self.batch_size)]
+                           output_image_shape=shape) for ii in range(self.batch_size)]
     # keep track of which cameras are done
     self._done = [False for ii in range(self.batch_size)]
-    self.preprocess = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
-    ])
 
   def newEpisodes(self, pano_paths, gt_loc=[]):
     '''Initialize cameras with new images.
@@ -116,9 +118,10 @@ class EnvBatch():
     for ii in range(self.batch_size):
       orig_lat = self.cameras[ii].lat
       orig_lng = self.cameras[ii].lng
-      neighbors = [np.zeros((FOV_SIZE, FOV_SIZE, 3), dtype='uint8')]*4
+      neighbors = [np.zeros((FOV_SIZE, FOV_SIZE, 3), dtype='uint8')]*5
       if not self._done[ii]:
-        neighbors = []
+        img = self.cameras[ii].get_image()
+        neighbors = [img]
         for navigate in [1, 2, 3, 4]:
           longitude = orig_lng + self.__look__[navigate][1]
           latitude = orig_lat + self.__look__[navigate][0]
@@ -141,13 +144,7 @@ class EnvBatch():
           neighbors.append(img)
         self.cameras[ii].look(orig_lat, orig_lng)
 
-      im_stack = []
-      for n in neighbors:
-        pil_img = Image.fromarray(n)
-        img_tensor = self.preprocess(pil_img)
-        im_stack.append(img_tensor.unsqueeze(0))
-
-      self.cameras[ii].neighbors = torch.cat(im_stack, 0).cuda()
+      self.cameras[ii].neighbors = neighbors
 
 
 class Refer360Batch():
@@ -162,6 +159,7 @@ class Refer360Batch():
                use_look_ahead=False,
                use_sentences=False,
                use_gt_action=False,
+               use_gpu_camera=False,
                oracle_mode=False,
                prepare_vocab=False,
                images='all'):
@@ -172,6 +170,7 @@ class Refer360Batch():
     self.fov = 90
     self.degrees = degrees
     self.use_look_ahead = use_look_ahead
+    self.use_gpu_camera = use_gpu_camera
 
     # observed image size
     self.observation_space = (3, FOV_SIZE, FOV_SIZE)
@@ -183,7 +182,8 @@ class Refer360Batch():
                         image_h=self.image_h,
                         image_w=self.image_w,
                         fov=self.fov,
-                        degrees=self.degrees)
+                        degrees=self.degrees,
+                        use_gpu_camera=self.use_gpu_camera)
     # keep a list of datum
     self.data = []
 
@@ -222,8 +222,6 @@ class Refer360Batch():
     self.coor_threshold = 20
     self.preprocess = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
     ])
     self.predictions = [None for ii in range(self.batch_size)]
 
@@ -300,7 +298,7 @@ class Refer360Batch():
     '''Returns a list of information and meta-data
     '''
     # keep a list of metadata
-    infos = []
+    observations = []
     # keep a list of image observations
     im_stack = []
 
@@ -312,6 +310,7 @@ class Refer360Batch():
 
       # Check dimension order
       perspective_image = state[0]
+      pixel_map = state[1]
 
       pil_img = Image.fromarray(perspective_image)
       img_tensor = self.preprocess(pil_img)
@@ -327,7 +326,7 @@ class Refer360Batch():
       else:
         gt_tuple, gt_coor = (None, None, None), None
 
-      infos.append({
+      observations.append({
           'id': datum['annotationid'],
           'gt_moves': datum['gt_moves'][0],
           'refexps': refexps,
@@ -337,14 +336,14 @@ class Refer360Batch():
           'gt_tuple': gt_tuple,
           'gt_coor': gt_coor,
           'pano': datum['pano'],
-          'img': state[0],
-          'pixel_map': state[1],
+          'img': perspective_image,
+          'pixel_map': pixel_map,
           'latitude': self.env.cameras[ii].lat,
           'longitude': self.env.cameras[ii].lng,
           'neighbors': self.env.cameras[ii].neighbors,
       })
     im_batch = torch.cat(im_stack, 0).cuda()
-    return im_batch, infos
+    return im_batch, observations
 
   def reset_panos(self):
     '''Random start lat/lng
@@ -460,14 +459,14 @@ class Refer360Batch():
                                         height=100, width=100)
             kl_loss = kl_loss.item()
             reward[ii] = (-kl_loss)*10
-            self.env._done[ii] = True
             self.predictions[ii] = (argmax_pred, (gt_x, gt_y))
+            self.env._done[ii] = True
           else:
-            # give 0 reward since waldo in fov
-            reward[ii] = 0.
+            # give negative reward since waldo in fov
+            reward[ii] = -10.
         elif navigate == 0:
           # waldo is not in fov
-          reward[ii] = life_penalty*2
+          reward[ii] = -10.  # *life_penalty*2
           self.env._done[ii] = True
         elif navigate == 5 and self.use_sentences:
           n_sentence = self.sentence_ids[ii]

@@ -1,5 +1,5 @@
 import paths
-import cv2
+
 import numpy as np
 import torchvision.models as models
 import torch

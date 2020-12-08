@@ -7,6 +7,9 @@ import argparse
 def get_train_rl():
   parser = argparse.ArgumentParser(
       description='advantage-actor-critic RL training for localizing Waldo!')
+  parser.add_argument('--multi-gpu',
+                      action='store_true', help='Use multiple gpu')
+
   parser.add_argument('--epoch', type=int, default=200,
                       help='# of epochs to train (default: 200)')
   parser.add_argument('--resume', type=str, default='',
@@ -30,8 +33,8 @@ def get_train_rl():
                       help='hidden dimension (default: 128)')
   parser.add_argument('--n-obs', type=int, default=10000,
                       help='pre-trained wordvector size (default: 10000)')
-  parser.add_argument('--n-head', type=int, default=16,
-                      help='# of heads for transformers (default: 16)')
+  parser.add_argument('--n-head', type=int, default=8,
+                      help='# of heads for transformers (default: 8)')
   parser.add_argument('--n-emb', type=int, default=128,
                       help='pre-trained wordvector size (default: 128)')
   parser.add_argument('--cnn-layer', type=int, default=6,
@@ -49,8 +52,8 @@ def get_train_rl():
                       help='validation frequency for every n epochs (default: 1)')
   parser.add_argument('--clip', type=float, default=5.0,
                       help='gradient clipping (default: 5.0)')
-  parser.add_argument('--metric', type=str, default='loss',
-                      help='target metric completion|loss|reward (default: loss)')
+  parser.add_argument('--metric', type=str, default='fov',
+                      help='target metric completion|loss|fov|reward (default: fov)')
 
   parser.add_argument('--gamma', type=float, default=0.99,
                       help='discount factor (default: 0.99)')
@@ -70,6 +73,8 @@ def get_train_rl():
                       action='store_true', help='Print to a progressbar or lines in stdout')
   parser.add_argument('--degrees', type=int, default=15,
                       help='degrees in FoV change, default=15')
+  parser.add_argument('--use-gpu-camera',
+                      action='store_true', help='Use gpu camera')
   parser.add_argument('--use-look-ahead',
                       action='store_true', help='Use look ahead')
   parser.add_argument('--oracle-mode',

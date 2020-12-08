@@ -57,7 +57,13 @@ class FinderLookAhead(nn.Module):
     self.n_layers = args.n_layers
 
     self.cnn = nn.Sequential(
-        *(list(models.resnet18(pretrained=True).children())[:-args.cnn_layer])).cuda().eval()
+        *(list(models.resnet18(pretrained=True).children())[:5])).cuda().eval()
+    # resnetmodel = models.resnet152(pretrained=True).cuda().eval()
+    # newmodel = torch.nn.Sequential(
+    #     *(list(resnetmodel.children())[:-6])).cuda()
+    # for p in newmodel.parameters():
+    #   newmodel.requires_grad = False
+    # self.cnn = newmodel
 
     self.localizer = get_localizer(args, self.n_vocab)
 
@@ -88,51 +94,38 @@ class FinderLookAhead(nn.Module):
                    for o in observations['observations']]
 
     texts, texts_mask, texts_emb_mask, seq_lengths = vectorize_seq(
-        instruction, self.vocab, self.n_emb, cuda=True, permute=self.use_masks)
+        instruction, self.vocab, 64, cuda=True, permute=self.use_masks)
 
-    # return text_embed with localizer?
     kwargs = {}
     if self.use_masks:
       kwargs['texts_mask'] = texts_mask
       kwargs['texts_emb_mask'] = texts_emb_mask
 
-    if self.use_raw_image:
-      kwargs['im_batch'] = observations['im_batch']
-      kwargs['imgs'] = [o['img']
-                        for o in observations['observations']]
-      kwargs['instruction'] = instruction
-      loc_pred = self.localizer(kwargs)
-    else:
-      images = self.cnn(observations['im_batch'])
-      loc_pred = self.localizer(images, texts, seq_lengths.cpu(), **kwargs)
-
-    obs = loc_pred.reshape(
-        self.batch_size, loc_pred.size(1) * loc_pred.size(2))
+    if not self.use_raw_image:
+      raise NotImplementedError()
 
     neighbors = [o['neighbors']
                  for o in observations['observations']]
-    all_neighbors = torch.cat(neighbors, 0)
-    neighbors_feat = self.cnn(all_neighbors)
-    neighbors_flat = neighbors_feat.reshape(
-        self.batch_size * 4, 64, loc_pred.size(1) * loc_pred.size(2)).permute(0, 2, 1)
 
-    neighbors_pred = self.neighbor2pred(neighbors_flat).squeeze()
-    neighbors_stack = neighbors_pred.reshape(self.batch_size, 4, 10000)
-    obs_stack = obs.unsqueeze(1).repeat(1, 4, 1)
+    neighbor_scores = []
+    for n in range(5):
+      neighbor_imgs = []
+      for bb, neighbor in enumerate(neighbors):
+        neighbor_imgs.append(neighbor[n])
 
-    fused = neighbors_stack * obs_stack
-    neighbors_scores = self.act2out(fused).squeeze(2)
-    pred_score = self.loc2pred(obs)
+      kwargs['imgs'] = neighbor_imgs
+      kwargs['instruction'] = instruction
+      loc_pred = self.localizer(kwargs)
+      neighbor_pred = loc_pred.reshape(
+          self.batch_size, loc_pred.size(1) * loc_pred.size(2))
 
-    action_logits = torch.cat([pred_score, neighbors_scores], 1)
+      if n == 0:
+        loc_pred = loc_pred
+      pred_score = self.loc2pred(neighbor_pred)
+      neighbor_scores.append(pred_score)
+
+    action_logits = torch.cat(neighbor_scores, 1)
     state_values = self.val2out(action_logits)
-
-    # state = self.obs2state(obs)
-    # state_now, rnn_hidden = self.memory(
-    #     state.unsqueeze(0), rnn_hidden)
-    # state_now = state_now.squeeze(0)
-
-    # action_logits,a state_values = self.actor(state_now, neighbors)
 
     out = {}
     out['action_logits'] = action_logits

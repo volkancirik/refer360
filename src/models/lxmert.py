@@ -9,9 +9,9 @@ from lxrt.modeling import BertLayerNorm, GeLU
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog
-
+from torchvision import transforms
 import numpy as np
-
+from PIL import Image
 # Max length including <bos> and <eos>
 MAX_SEQ_LENGTH = 100
 DATA_PATH = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
@@ -106,7 +106,7 @@ def extract_detectron2_features(detector, raw_images):
       for nms_thresh in np.arange(0.3, 1.0, 0.1):
         instances, ids = fast_rcnn_inference_single_image(
             boxes, probs, image_size,
-            score_thresh=0.2, nms_thresh=nms_thresh, topk_per_image=MAX_BOXES
+            score_thresh=0.5, nms_thresh=nms_thresh, topk_per_image=MAX_BOXES
         )
         if len(ids) >= MIN_BOXES:
           break
@@ -134,7 +134,9 @@ def extract_detectron2_features(detector, raw_images):
 
 
 class LXMERTLocalizer(nn.Module):
-  def __init__(self, args, num_logits=100*100):
+  def __init__(self, args,
+               width=100,
+               height=100):
     super().__init__()
 
     # Build LXRT encoder
@@ -143,6 +145,9 @@ class LXMERTLocalizer(nn.Module):
         max_seq_length=MAX_SEQ_LENGTH
     )
     hid_dim = self.lxrt_encoder.dim
+    num_logits = width * height
+    self.width = width
+    self.height = height
     self.n_actions = num_logits
 
     self.logit_fc = nn.Sequential(
@@ -180,6 +185,11 @@ class LXMERTLocalizer(nn.Module):
       self.cnn = nn.Sequential(
           *(list(models.resnet18(pretrained=True).children())[:-3])).cuda().eval()
       self.cnn2box = nn.Linear(256, 2048)
+      self.preprocess = transforms.Compose([
+          transforms.ToTensor(),
+          transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                               std=[0.229, 0.224, 0.225]),
+      ])
 
   def get_det2_boxes(self, imgs):
 
@@ -221,10 +231,16 @@ class LXMERTLocalizer(nn.Module):
     if self.use_detectron:
       feats, boxes = self.get_det2_boxes(inp['imgs'])
     else:
-      feats, boxes = self.get_cnn_boxes(inp['im_batch'])
+      imgs = []
+      for img in inp['imgs']:
+        pil_img = Image.fromarray(img)
+        i = self.preprocess(pil_img).unsqueeze(0).cuda()
+        imgs.append(i)
+      img_tensor = torch.cat(imgs, 0)
+      feats, boxes = self.get_cnn_boxes(img_tensor)
 
     x = self.lxrt_encoder(instruction, (feats, boxes))
     batch_size = x.size(0)
-    logit = self.logit_fc(x).view(batch_size, 100, 100)
+    logit = self.logit_fc(x).view(batch_size, self.height, self.width)
 
     return logit

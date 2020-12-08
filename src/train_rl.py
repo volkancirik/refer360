@@ -2,13 +2,20 @@
 RL agent playing the game
 """
 import paths
+import os
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['GPU_DEBUG'] = '2'
+
+import sys
+from gpu_profile import gpu_profile
+
 from env import Refer360Batch
 from get_model import get_model
 from arguments import get_train_rl
 import numpy as np
 from collections import namedtuple
 import json
-import os
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -16,11 +23,11 @@ from torch.distributions import Categorical
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from collections import defaultdict
-
+import gc
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
 torch.backends.cudnn.benchmark = True
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 #device = torch.device('cuda')
 
 
@@ -125,6 +132,9 @@ def finish_episode(model, optimizer, clip, update=False):
 
   policy_loss = 0.0
   value_loss = 0.0
+
+  pls = []
+  vls = []
   for bb in range(model.batch_size):
 
     rewards = model.rewards[bb]
@@ -134,7 +144,12 @@ def finish_episode(model, optimizer, clip, update=False):
     policy_loss += pl
     value_loss += vl
 
+    pls.append(pl.item())
+    vls.append(vl.item())
+
   loss = policy_loss + value_loss
+
+  gpu_profile(frame=sys._getframe(), event='line', arg=None)
   if update:
     optimizer.zero_grad()
     loss.backward()
@@ -143,6 +158,7 @@ def finish_episode(model, optimizer, clip, update=False):
 
   del model.rewards
   del model.saved_actions
+
   model.rewards = [[] for bb in range(model.batch_size)]
   model.saved_actions = [[] for bb in range(model.batch_size)]
 
@@ -178,16 +194,17 @@ def eval_epoch(ref360env, model, optimizer, args,
   else:
     pbar = range(n_updates)
 
+  rnn_hidden = torch.zeros(args.n_layers,
+                           batch_size, args.n_hid).cuda()
+
   for bid in pbar:
     done_list = [False]*batch_size
 
-    batch_metrics = defaultdict(list)
-    for metric in ['reward']:
-      batch_metrics[metric] = [list() for kk in range(batch_size)]
-    done_set = set()
+    batch_metrics = {}
+    batch_metrics['reward'] = [list() for kk in range(batch_size)]
+    batch_metrics['step'] = [list() for kk in range(batch_size)]
 
-    rnn_hidden = torch.zeros(args.n_layers,
-                             batch_size, args.n_hid).cuda()
+    done_set = set()
 
     history = {}
     for o in observations:
@@ -248,6 +265,7 @@ def eval_epoch(ref360env, model, optimizer, args,
           batch_metrics['reward'][kk].append(r.item())
           if d:
             done_set.add(kk)
+            batch_metrics['step'][kk].append(_step+1)
 
     for kk in range(batch_size):
       if kk not in done_set:
@@ -280,6 +298,8 @@ def eval_epoch(ref360env, model, optimizer, args,
     logs = dict()
     log_list = [log_loss]
     for metric in sorted(epoch_mean):
+      if metric not in set(['loss', 'acc_40', 'fov', 'reward', 'step']):
+        continue
       logs[metric] = '{} E: {:3.3f} B: {:3.3f}'.format(metric,
                                                        epoch_mean[metric],
                                                        epoch_metrics[metric][-1])
@@ -334,6 +354,7 @@ def main():
                                 seed=args.seed,
                                 degrees=args.degrees,
                                 use_look_ahead=args.use_look_ahead,
+                                use_gpu_camera=args.use_gpu_camera,
                                 oracle_mode=args.oracle_mode,
                                 images=args.trn_images,
                                 prepare_vocab=True)
@@ -342,10 +363,13 @@ def main():
                                 seed=args.seed,
                                 degrees=args.degrees,
                                 use_look_ahead=args.use_look_ahead,
+                                use_gpu_camera=args.use_gpu_camera,
                                 oracle_mode=args.oracle_mode,
                                 images=args.val_images)
 
   model = get_model(args, trn_ref360env.vocab, n_actions=5)
+  if args.multi_gpu:
+    model = torch.nn.DataParallel(model)
   optimizer = optim.Adam(model.parameters(),
                          lr=args.lr,
                          weight_decay=args.weight_decay)
@@ -388,4 +412,5 @@ def main():
 
 
 if __name__ == '__main__':
+  sys.settrace(gpu_profile)
   main()

@@ -1,3 +1,4 @@
+
 def get_localizer(args, n_vocab):
   '''Return a localizer module.
   '''
@@ -54,8 +55,12 @@ def get_localizer(args, n_vocab):
     model = VisualBert(args, n_vocab)
   elif args.model == 'lxmert':
     args.use_raw_image = True
-    model = LXMERTLocalizer(args)
+    model = LXMERTLocalizer(args,
+                            width=100,
+                            height=100)
   else:
     raise NotImplementedError('Model {} is not implemented'.format(args.model))
   print('using {} localizer'.format(args.model))
+  print('using raw image {}'.format(args.use_raw_image))
+  print('using masks {}'.format(args.use_masks))
   return model.cuda()
