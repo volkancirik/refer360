@@ -20,8 +20,8 @@ from fov_pretraining import FoVTask2
 from fov_pretraining import FoVTask3
 from fov_pretraining import FoVTask4
 
-from models import VisionOnly
-from models import LXMERTModel
+from models import Hallucinator
+from models import LXMERTHallucinator
 
 from utils import DIRECTIONS
 from utils import get_object_dictionaries
@@ -48,16 +48,13 @@ def get_fovpretraining_model(args, n_objects, n_directions,
     raise NotImplementedError()
 
   if args.model == 'lxmert':
-    return LXMERTModel(args, n_actions).cuda()
-  return VisionOnly(args.batch_size,
-                    hidden_size=args.n_hid,
-                    n_actions=n_actions,
-                    w=26,
-                    h=26,
-                    ch=1,
-                    use_queries=use_queries,
-                    n_objects=n_objects,
-                    fov_emb_mode=args.fov_emb_mode).cuda()
+    return LXMERTHallucinator(args, n_actions).cuda()
+  return Hallucinator(args.batch_size,
+                      hidden_size=args.n_hid,
+                      n_actions=n_actions,
+                      n_objects=n_objects,
+                      use_queries=use_queries,
+                      fov_emb_mode=args.fov_emb_mode).cuda()
 
 
 def eval_epoch(data_iterator, model, optimizer, args,
@@ -280,7 +277,8 @@ def main():
   else:
     raise NotImplementedError()
 
-  training_split = ['train']
+  training_split = ['validation.seen'] if args.debug > 0 else [
+      'train']
   validation_unseen_split = training_split if args.debug > 0 else [
       'validation.unseen']
   validation_seen_split = training_split if args.debug > 0 else [

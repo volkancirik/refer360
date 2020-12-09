@@ -135,8 +135,8 @@ def get_train_fovpretraining():
                       help='data path for loading (default: ../data)')
 
   # Model parameters
-  parser.add_argument('--model', type=str, default='visualbert',
-                      help='model name visualbert (default: visualbert)')
+  parser.add_argument('--model', type=str, default='hallucinator',
+                      help='model name hallucinator|lxmert (default: hallucinator)')
 
   parser.add_argument('--n-img-channels', type=int, default=64,
                       help='# of image channels (default: 64)')
