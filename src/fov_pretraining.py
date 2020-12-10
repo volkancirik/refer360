@@ -85,8 +85,8 @@ def load_fovpretraining_splits(splits,
   print('obj_directions:', len(obj_directions))
   print('labels:', len(labels))
   print('pano_metas:', len(pano_metas))
-  
-  most_freq = -1
+
+  most_freq = {l:0 for l in range(len(labels))}
   if 'train' in splits:
     print('_'*20)
     for o, _ in enumerate(obj_classes):
@@ -96,9 +96,8 @@ def load_fovpretraining_splits(splits,
       for ii, (d, cnt) in enumerate(sorted_counts):
         print('{:20}:{:3.3f}'.format(d, cnt/total))
       print('_'*20)
-
-      most_freq = DIRECTIONS[direction].index(sorted_counts[0][0])
-
+      most_freq[o] = DIRECTIONS[direction].index(sorted_counts[0][0])
+    print('most_freq:', most_freq)
   print('Loaded {} insances using {} direction method'.format(
       len(fov_files), direction))
   return fovs, fov_files, regions, refexps, obj_lists, obj_queries, obj_directions, labels, pano_metas, most_freq
@@ -211,8 +210,8 @@ class FoVTask1(FoVPretrainingDataset):
       boxes[..., (0, 2)] /= img_w
       boxes[..., (1, 3)] /= img_h
 
-      return latitude, longitude, image, boxes, feats, torch.tensor([]), '', target
-    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), torch.tensor([]), '', target
+      return latitude, longitude, image, boxes, feats, torch.tensor([]), '', target, torch.tensor([])
+    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), torch.tensor([]), '', target, torch.tensor([])
 
 
 class FoVTask2(FoVPretrainingDataset):
@@ -245,6 +244,7 @@ class FoVTask2(FoVPretrainingDataset):
     obj_index = random.randint(0,len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
     obj_direction = obj_directions[obj_index]
+    most_freq = self.most_freq[obj_query]
 
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
@@ -252,6 +252,7 @@ class FoVTask2(FoVPretrainingDataset):
     image = torch.cuda.FloatTensor(img_features)
     query = torch.cuda.LongTensor([obj_query])
     direction = torch.cuda.FloatTensor([obj_direction])
+    most_freq_label = torch.cuda.LongTensor([most_freq])
 
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
@@ -264,8 +265,8 @@ class FoVTask2(FoVPretrainingDataset):
       boxes[..., (0, 2)] /= img_w
       boxes[..., (1, 3)] /= img_h
 
-      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], direction
-    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], direction
+      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], direction, most_freq_label
+    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], direction, most_freq_label
 
 
 class FoVTask3(FoVPretrainingDataset):
@@ -280,7 +281,7 @@ class FoVTask3(FoVPretrainingDataset):
     super(FoVTask3, self).__init__(splits, direction,
                                    data_root=data_root,
                                    images=images,
-                                   task='task2',
+                                   task='task3',
                                    obj_dict_file=obj_dict_file,
                                    use_objects=use_objects,
                                    ignore_list=ignore_list)
@@ -326,13 +327,14 @@ class FoVTask3(FoVPretrainingDataset):
     obj_index = random.randint(0,len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
     obj_direction = obj_directions[obj_index]
-
+    most_freq = self.most_freq[obj_query]
 
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
 
     image = torch.cuda.FloatTensor(img_features)
     query = torch.cuda.LongTensor([obj_query])
+    most_freq_label = torch.cuda.LongTensor([most_freq])
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
 
@@ -356,8 +358,8 @@ class FoVTask3(FoVPretrainingDataset):
       boxes[..., (0, 2)] /= img_w
       boxes[..., (1, 3)] /= img_h
 
-      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], presence
-    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], presence
+      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], presence, most_freq_label
+    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], presence, most_freq_label
 
 
 class FoVTask4(FoVTask3):
@@ -374,7 +376,8 @@ class FoVTask4(FoVTask3):
                                    images=images,
                                    obj_dict_file=obj_dict_file,
                                    use_objects=use_objects,
-                                   ignore_list=ignore_list)
+                                   ignore_list=ignore_list,
+                                   task='task4')
 
   def __getitem__(self, index):
 
@@ -384,6 +387,7 @@ class FoVTask4(FoVTask3):
     obj_index = random.randint(0,len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
     obj_direction = obj_directions[obj_index]
+    most_freq = self.most_freq[obj_query]
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
 
@@ -409,7 +413,8 @@ class FoVTask4(FoVTask3):
 
     image = torch.cuda.FloatTensor(img_features)
     query = torch.cuda.LongTensor([obj_query])
-
+    most_freq_label = torch.cuda.LongTensor([most_freq])
+    
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]
@@ -421,8 +426,8 @@ class FoVTask4(FoVTask3):
       boxes[..., (0, 2)] /= img_w
       boxes[..., (1, 3)] /= img_h
 
-      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], presence
-    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], presence
+      return latitude, longitude, image, boxes, feats, query, self.obj_classes[query], presence, most_freq_label
+    return latitude, longitude, image, torch.tensor([]), torch.tensor([]), query, self.obj_classes[query], presence, most_freq_label
 
   def __len__(self):
     return len(self.pano_metas)

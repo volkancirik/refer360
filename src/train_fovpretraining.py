@@ -125,7 +125,8 @@ def eval_epoch(data_iterator, model, optimizer, args,
             batch_feats,
             batch_queries,
             batch_query_strings,
-            batch_targets) in enumerate(pbar):
+            batch_targets,
+            batch_most_freq) in enumerate(pbar):
     if debug and bid == n_updates:
       break
     out = model({
@@ -198,8 +199,7 @@ def eval_epoch(data_iterator, model, optimizer, args,
           num_classes).cuda() == batch_targets).float().mean()
       random_acc.append(r_acc.item())
 
-      mfreq_acc = (torch.ones_like(batch_targets).cuda() *
-                   most_freq == batch_targets).float().mean()
+      mfreq_acc = (batch_most_freq == batch_targets).float().mean()
       mostfreq_acc.append(mfreq_acc.item())
 
       log_string = 'acc: {:3.3f} mfreq-acc: {:3.3f} r-acc: {:3.3f}'.format(
@@ -363,7 +363,6 @@ def main():
                            obj_classes=obj_classes,
                            weights=weights,
                            clip=args.clip,
-                           most_freq=trn_dataset.most_freq,
                            debug=args.debug,
                            log_path=log_path)
     tot_trn_iter = n_iter
@@ -380,7 +379,6 @@ def main():
                                             sample_path=sample_path,
                                             obj_classes=obj_classes,
                                             weights=weights,
-                                            most_freq=trn_dataset.most_freq,
                                             debug=args.debug,
                                             log_path=log_path)
       tot_val_seen_iter = n_iter
@@ -394,7 +392,6 @@ def main():
                                               sample_path=sample_path,
                                               obj_classes=obj_classes,
                                               weights=weights,
-                                              most_freq=trn_dataset.most_freq,
                                               debug=args.debug,
                                               log_path=log_path)
       tot_val_unseen_iter = n_iter
