@@ -63,16 +63,29 @@ def load_fovpretraining_splits(splits,
       regions += [instance['regions']]
       obj_lists += [instance['obj_list']]
 
+      obj_query = []
+      obj_direction = []
       for dir_id, dir in enumerate(DIRECTIONS[direction]):
         for obj in instance['obj_list'][direction][dir]:
-          obj_queries += [obj]
-          obj_directions += [dir_id]
+          obj_query += [obj]
+          obj_direction += [dir_id]
 
           if obj not in labels:
             labels[obj] = defaultdict(int)
           labels[obj][dir] += 1.0
+      obj_queries += [obj_query]
+      obj_directions += [obj_direction]
     pbar.close()
-
+  print('fovs:', len(fovs))
+  print('fov_files:', len(fov_files))
+  print('regions:', len(regions))
+  print('refexps:', len(refexps))
+  print('obj_lists:', len(obj_lists))
+  print('obj_queries:', len(obj_queries))
+  print('obj_directions:', len(obj_directions))
+  print('labels:', len(labels))
+  print('pano_metas:', len(pano_metas))
+  
   most_freq = -1
   if 'train' in splits:
     print('_'*20)
@@ -226,8 +239,12 @@ class FoVTask2(FoVPretrainingDataset):
 
     fov_file = self.fov_files[index]
 
-    obj_query = self.obj_queries[index]
-    obj_direction = self.obj_directions[index]
+    obj_queries = self.obj_queries[index]
+    obj_directions = self.obj_directions[index]
+
+    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_query = obj_queries[obj_index]
+    obj_direction = obj_directions[obj_index]
 
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
@@ -303,7 +320,13 @@ class FoVTask3(FoVPretrainingDataset):
 
     fov_file = self.fov_files[index]
 
-    obj_query = self.obj_queries[index]
+    obj_queries = self.obj_queries[index]
+    obj_directions = self.obj_directions[index]
+
+    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_query = obj_queries[obj_index]
+    obj_direction = obj_directions[obj_index]
+
 
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
@@ -355,7 +378,13 @@ class FoVTask4(FoVTask3):
 
   def __getitem__(self, index):
 
-    obj_query = self.obj_queries[index]
+    obj_queries = self.obj_queries[index]
+    obj_directions = self.obj_directions[index]
+
+    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_query = obj_queries[obj_index]
+    obj_direction = obj_directions[obj_index]
+
     pano_id, pano_category, pano_loc = self.pano_metas[index]
 
     existing_panos = set(self.obj2pano[obj_query])
