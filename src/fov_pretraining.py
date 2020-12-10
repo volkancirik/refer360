@@ -86,7 +86,7 @@ def load_fovpretraining_splits(splits,
   print('labels:', len(labels))
   print('pano_metas:', len(pano_metas))
 
-  most_freq = {l:0 for l in range(len(labels))}
+  most_freq = defaultdict(int)
   if 'train' in splits:
     print('_'*20)
     for o, _ in enumerate(obj_classes):
@@ -277,11 +277,12 @@ class FoVTask3(FoVPretrainingDataset):
                obj_dict_file='../data/vg_object_dictionaries.json',
                use_objects=False,
                obj_complement='pano',
-               ignore_list=''):
+               ignore_list='',
+               task='task3'):
     super(FoVTask3, self).__init__(splits, direction,
                                    data_root=data_root,
                                    images=images,
-                                   task='task3',
+                                   task=task,
                                    obj_dict_file=obj_dict_file,
                                    use_objects=use_objects,
                                    ignore_list=ignore_list)
