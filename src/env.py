@@ -417,12 +417,16 @@ class Refer360Batch():
     metrics = defaultdict(float)
     for ii in range(self.batch_size):
       if self.predictions[ii]:
-        pred = self.predictions[ii]
-        distance = np.sqrt(((pred[0][0] - pred[1][0])
-                            ** 2 + (pred[0][1] - pred[1][1])**2).item())
+        pred_loc, gt_loc, in_fov = self.predictions[ii]
+        if gt_loc[0] == 0 and gt_loc[1] == 0:
+          distance = (100*np.sqrt(2))
+        else:
+          distance = np.sqrt(((pred_loc[0] - gt_loc[0])
+                              ** 2 + (pred_loc[1] - gt_loc[1])**2))
+
         for th in [40, 80, 120]:
           metrics['acc_{}'.format(th)] += int(distance <= th)
-        metrics['fov'] += 1.0
+        metrics['fov'] += in_fov
         metrics['distance'] += distance
       else:
         metrics['distance'] += (100*np.sqrt(2))
@@ -443,7 +447,7 @@ class Refer360Batch():
     obs, infos = self._get_obs()
     for ii, action in enumerate(action_tuples):
       navigate, argmax_pred, pred = action
-
+      navigate = navigate.item()
      # for unfinished environment set the reward
       if not self.env._done[ii]:
         datum = self.batch[ii]
@@ -451,36 +455,47 @@ class Refer360Batch():
             datum['gt_lat'], datum['gt_lng'])
 
         if coor:  # waldo is in the fov
+          gt_x, gt_y = int(coor[1]/4), int(coor[0]/4)
           # if the agent makes a prediction
           if navigate == 0:
             # return negative of kl_loss as reward
-            gt_x, gt_y = int(coor[1]/4), int(coor[0]/4)
             kl_loss = smoothed_gaussian(pred, gt_x, gt_y,
                                         height=100, width=100)
             kl_loss = kl_loss.item()
-            reward[ii] = (-kl_loss)*10
-            self.predictions[ii] = (argmax_pred, (gt_x, gt_y))
+            reward[ii] = (-kl_loss)*1000
+            self.predictions[ii] = (
+                argmax_pred.cpu().numpy(), (gt_x, gt_y), 1.)
             self.env._done[ii] = True
           else:
-            # give negative reward since waldo in fov
-            reward[ii] = -10.
-        elif navigate == 0:
-          # waldo is not in fov
-          reward[ii] = -10.  # *life_penalty*2
-          self.env._done[ii] = True
-        elif navigate == 5 and self.use_sentences:
-          n_sentence = self.sentence_ids[ii]
-          target_lng = self.batch[ii]['gt_moves'][0][n_sentence][1]
-          target_lat = self.batch[ii]['gt_moves'][0][n_sentence][0]
-          target_coor = self.env.cameras[ii].get_image_coordinate_for(
-              target_lat, target_lng)
-          if target_coor:
-            reward[ii] = 300 - ((target_coor[0] - 200) **
-                                2 + (target_coor[1] - 200)**2)*0.5
-            print('\n, target_coor', target_coor, reward[ii])
-          else:
-            reward[ii] = life_penalty*2
-          self.env._done[ii] = True
+            reward[ii] = 100.
+            self.predictions[ii] = ((0, 0), (0, 0), 1.)
+            self.env._done[ii] = True
+        else:
+          if navigate == 0:
+            # waldo is not in fov
+            reward[ii] = -10.  # *life_penalty*2
+            self.predictions[ii] = ((0, 0), (0, 0), 0.)
+            self.env._done[ii] = True
+          elif navigate in set([1, 2, 3, 4]):
+            d = (self.env.cameras[ii].lat - datum['gt_lat'])**2
+            d += (self.env.cameras[ii].lng - datum['gt_lng'])**2
+            d = d**0.5
+            #reward[ii] -= d
+            self.predictions[ii] = ((0, 0), (0, 0), 0.)
+          elif navigate == 5:
+            raise NotImplementedError('action #5 is not implemented yet!')
+          # n_sentence = self.sentence_ids[ii]
+          # target_lng = self.batch[ii]['gt_moves'][0][n_sentence][1]
+          # target_lat = self.batch[ii]['gt_moves'][0][n_sentence][0]
+          # target_coor = self.env.cameras[ii].get_image_coordinate_for(
+          #     target_lat, target_lng)
+          # if target_coor:
+          #   reward[ii] = 300 - ((target_coor[0] - 200) **
+          #                       2 + (target_coor[1] - 200)**2)*0.5
+          #   print('\n, target_coor', target_coor, reward[ii])
+          # else:
+          #   reward[ii] = life_penalty*2
+          # self.env._done[ii] = True
 
     reward = torch.from_numpy(np.array([reward])).permute(1, 0).float()
     return obs, reward, np.array(self.env._done), infos
