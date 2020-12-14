@@ -480,7 +480,7 @@ class Refer360Batch():
             d = (self.env.cameras[ii].lat - datum['gt_lat'])**2
             d += (self.env.cameras[ii].lng - datum['gt_lng'])**2
             d = d**0.5
-            #reward[ii] -= d
+            reward[ii] -= d
             self.predictions[ii] = ((0, 0), (0, 0), 0.)
           elif navigate == 5:
             raise NotImplementedError('action #5 is not implemented yet!')
