@@ -19,6 +19,8 @@ def run_generate_grid():
   image_root = sys.argv[2]  # ../data/refer360images
   out_root = sys.argv[3]  # ../data/grid_data_30
   degree = int(sys.argv[4])  # 30
+  full_w = int(sys.argv[5])  # 4552
+  full_h = int(sys.argv[6])  # 2276
 
   if not os.path.exists(out_root):
     try:
@@ -31,7 +33,9 @@ def run_generate_grid():
   for fname in pbar:
     image_path = os.path.join(image_root, fname)
     pano = fname.split('/')[-1].split('.')[0]
-    nodes, canvas = generate_grid(degree=degree)
+    nodes, canvas = generate_grid(degree=degree,
+                                  full_w=full_w,
+                                  full_h=full_h)
 
     node_path = os.path.join(
         out_root, '{}.npy'.format(pano))

@@ -20,7 +20,7 @@ class PanoramicCamera:
     self.img_path = ''
     self._img = None
 
-  def load_img(self, img_path, gt_loc=None, convert_color=False):
+  def load_img(self, img_path, gt_loc=None, convert_color=True):
     """Load image for the camera.
     """
 
@@ -54,7 +54,7 @@ class PanoramicCamera:
     """Return the image in the FoV
     """
     image = cv2.remap(self._img, self.lat_map, self.lng_map,
-                      cv2.INTER_CUBIC, borderMode=cv2.BORDER_WRAP)
+                      cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_WRAP)
     return image
 
   def get_map(self):
@@ -95,7 +95,7 @@ class PanoramicCamera:
 
     return coords
 
-  def _calculateMap(self, FOV, THETA, PHI, height, width, RADIUS=128):
+  def _calculateMap(self, FOV, THETA, PHI, height, width, RADIUS=128.0):
     """Calculate the pixel map.
     """
     equ_h = self._height
@@ -103,8 +103,12 @@ class PanoramicCamera:
     equ_cx = (equ_w - 1) / 2.0
     equ_cy = (equ_h - 1) / 2.0
 
-    wFOV = FOV
-    hFOV = float(height) / width * wFOV
+    wFOV = 75  # FOV
+    hFOV = 60  # FOV  # (float(height) / width * wFOV)
+
+    # hFOV = FOV
+    # wFOV = float(width) / height * hFOV
+    print('\n', wFOV, hFOV)
 
     c_x = (width - 1) / 2.0
     c_y = (height - 1) / 2.0
@@ -118,6 +122,7 @@ class PanoramicCamera:
     h_len = 2 * RADIUS * np.sin(np.radians(hFOV / 2.0)) / \
         np.sin(np.radians(hangle))
     h_interval = h_len / (height - 1)
+
     x_map = np.zeros([height, width], np.float32) + RADIUS
     y_map = np.tile((np.arange(0, width) - c_x) * w_interval, [height, 1])
     z_map = -np.tile((np.arange(0, height) - c_y) * h_interval, [width, 1]).T

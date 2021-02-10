@@ -17,7 +17,6 @@ from scipy.spatial import Delaunay
 
 from utils import rad2degree
 from model_utils import get_det2_features
-from utils import generate_fovs
 
 
 torch.backends.cudnn.benchmark = True
@@ -48,9 +47,9 @@ def get_triangulation(nodes, left_w, width):
 
 
 def generate_graph(image_path, predictor, vg_classes,
-                   full_w=4552,
-                   full_h=2276,
-                   left_w=128,
+                   full_w=2048,  # full_w=4552,
+                   full_h=1024,  # full_h=2276,
+                   left_w=32,  # left_w=128,
                    topk=100):
   font = cv2.FONT_HERSHEY_SIMPLEX
   THRESHOLD = 50
@@ -223,7 +222,11 @@ def run_generate_graph():
 
   pbar = tqdm(image_list)
   for fname in pbar:
+    pbar.set_description(fname)
     image_path = os.path.join(image_root, fname)
+    if not os.path.exists(image_path):
+      print('ERROR: image_path {} is empyt!!!'.format(image_path))
+      continue
     pano = fname.split('/')[-1].split('.')[0]
     nodes, canvas = generate_graph(
         image_path, predictor, vg_classes)
@@ -236,7 +239,7 @@ def run_generate_graph():
     fov_prefix = os.path.join(
         out_root, '{}.fov'.format(pano))
 
-    generate_fovs(image_path, node_path, fov_prefix)
+    #generate_fovs(image_path, node_path, fov_prefix)
 
 
 if __name__ == '__main__':

@@ -477,7 +477,7 @@ class Refer360Batch():
             self.predictions[ii] = ((0, 0), (0, 0), 0.)
             self.env._done[ii] = True
           elif navigate in set([1, 2, 3, 4]):
-            d = (self.env.cameras[ii].lat - datum['gt_lat'])**2
+            d = (self.env.ii[cameras].lat - datum['gt_lat'])**2
             d += (self.env.cameras[ii].lng - datum['gt_lng'])**2
             d = d**0.5
             reward[ii] -= d

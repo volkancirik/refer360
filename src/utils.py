@@ -10,7 +10,7 @@ from tqdm import tqdm
 from PIL import Image
 from panoramic_camera_gpu import PanoramicCameraGPU as camera
 #from panoramic_camera import PanoramicCamera as camera
-
+from pprint import pprint
 
 # dict of pano category to location category
 CAT2LOC = {'restaurant': 'indoor',
@@ -246,8 +246,6 @@ def generate_gt_moves(image_path, move_list, move_ids,
 
 
 def generate_fovs(image_path, node_path, fov_prefix,
-                  full_w=4552,
-                  full_h=2276,
                   fov_size=400):
   '''Generates FoV images for given list of objects.
   '''
@@ -578,6 +576,9 @@ def dump_datasets(splits, image_categories, output_file,
 
             mdatum['fov_file'] = fov_file
             regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+            print('\n>>>>>>')
+            pprint(mdatum)
+            quit(1)
             mdatum['regions'] = regions
             mdatum['obj_list'] = obj_list
 
@@ -639,6 +640,89 @@ def dump_datasets(splits, image_categories, output_file,
   np.save(open(output_file, 'wb'), {'data_list': data_list,
                                     'sentences': all_sentences})
 #  return data_list, all_sentences
+
+
+def dump_mp3d_datasets(splits, output_file,
+                       task='grid_fov_pretraining',
+                       task_root='',
+                       graph_root='',
+                       obj_dict_file='../data/vg_object_dictionaries.top100.matterport3d.json',
+                       image_list_file='../data/imagelist.matterport3d.txt',
+                       degree=30):
+  '''Prepares and dumps dataset to an npy file.
+  '''
+
+  if task_root != '' and not os.path.exists(task_root):
+    try:
+      os.makedirs(task_root)
+    except:
+      print('Cannot create folder {}'.format(task_root))
+      quit(1)
+  vg2idx = json.load(open(obj_dict_file, 'r'))['vg2idx']
+
+  data_list = []
+  data = []
+  stats = defaultdict(int)
+  image_list = [line.strip().split('.')[0]
+                for line in open(image_list_file)]
+  pbar = tqdm(image_list)
+
+  for ii, pano in enumerate(pbar):
+
+    if task == 'continuous_grounding':
+      raise NotImplementedError()
+    elif task == 'graph_grounding' and task_root != '':
+      raise NotImplementedError()
+    elif task == 'fov_pretraining' and task_root != '':
+      raise NotImplementedError()
+    elif task == 'grid_fov_pretraining' and task_root != '':
+      grid_nodes, _ = generate_grid(degree=degree)
+      node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+      nodes = np.load(node_path, allow_pickle=True)[()]
+
+      for n in grid_nodes:
+        node = grid_nodes[n]
+
+        mdatum = {}
+        fov_id = node['id']
+        mdatum['fov_id'] = fov_id
+
+        mdatum['pano'] = pano
+
+        lat, lng = node['lat'], node['lng']
+        mx, my = node['x'], node['y']
+        mdatum['latitude'] = lat
+        mdatum['longitude'] = lng
+        mdatum['x'] = mx
+        mdatum['y'] = my
+
+        mdatum['refexps'] = []
+        fov_file = os.path.join(
+            task_root, '{}.fov{}.jpg'.format(pano, fov_id))
+
+        mdatum['fov_file'] = fov_file
+        regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+        mdatum['regions'] = regions
+        mdatum['obj_list'] = obj_list
+
+        directions = [len(obj_list['canonical'][d]) > 0 for d in [
+            'up', 'down', 'left', 'right']]
+
+        if any(directions):
+          data.append(mdatum)
+    elif task == 'balanced_fov_pretraining' and task_root != '':
+      raise NotImplementedError()
+    data_list.append(data)
+  pbar.close()
+
+  print('_'*20)
+  for c in stats:
+    print('{:<16} {:2.2f}'.format(c, stats[c]))
+  print('_'*20)
+
+  print('Dumping to {}'.format(output_file))
+  np.save(open(output_file, 'wb'), {'data_list': data_list,
+                                    'sentences': []})
 
 
 def add_overlay(src, trg, coor,

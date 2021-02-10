@@ -12,6 +12,9 @@ PYTHONPATH=.. python simulate_history.py exp-random/samples/2100_randomagent.jso
 '''
 DATA_PATH = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
 DETECTRON2_YAML = '../py_bottom_up_attention/configs/VG-Detection/faster_rcnn_R_101_C4_caffe.yaml'
+import matplotlib
+matplotlib.use('Agg')
+
 import cv2
 import sys
 

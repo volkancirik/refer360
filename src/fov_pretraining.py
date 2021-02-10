@@ -17,7 +17,8 @@ def load_fovpretraining_splits(splits,
                                images='all',
                                task='task1',
                                obj_classes=[],
-                               ignore_list=''):
+                               ignore_list='',
+                               use_meta=False):
 
   fov_files = []
   regions = []
@@ -46,11 +47,17 @@ def load_fovpretraining_splits(splits,
 
       if any(ignored):
         continue
+
       fov_files += [instance['fov_file']]
-      pano_category = instance['pano'].split('/')[-2]
-      pano_id = "_".join(instance['pano'].split(
-          '/')[-1].split('.')[0].split('_')[:2])
-      pano_loc = CAT2LOC[pano_category]
+      if use_meta:
+        pano_category = instance['pano'].split('/')[-2]
+        pano_id = "_".join(instance['pano'].split(
+            '/')[-1].split('.')[0].split('_')[:2])
+        pano_loc = CAT2LOC[pano_category]
+      else:
+        pano_category = 'n/a'
+        pano_id = instance['pano']
+        pano_loc = 'n/a'
 
       pano_metas += [(pano_id, pano_category, pano_loc)]
       fovs += [(instance['latitude'], instance['longitude'])]
@@ -241,7 +248,7 @@ class FoVTask2(FoVPretrainingDataset):
     obj_queries = self.obj_queries[index]
     obj_directions = self.obj_directions[index]
 
-    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_index = random.randint(0, len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
     obj_direction = obj_directions[obj_index]
     most_freq = self.most_freq[obj_query]
@@ -325,7 +332,7 @@ class FoVTask3(FoVPretrainingDataset):
     obj_queries = self.obj_queries[index]
     obj_directions = self.obj_directions[index]
 
-    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_index = random.randint(0, len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
     obj_direction = obj_directions[obj_index]
     most_freq = self.most_freq[obj_query]
@@ -383,11 +390,11 @@ class FoVTask4(FoVTask3):
   def __getitem__(self, index):
 
     obj_queries = self.obj_queries[index]
-    obj_directions = self.obj_directions[index]
+    #obj_directions = self.obj_directions[index]
 
-    obj_index = random.randint(0,len(obj_queries)-1)
+    obj_index = random.randint(0, len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
-    obj_direction = obj_directions[obj_index]
+    #obj_direction = obj_directions[obj_index]
     most_freq = self.most_freq[obj_query]
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
@@ -415,7 +422,7 @@ class FoVTask4(FoVTask3):
     image = torch.cuda.FloatTensor(img_features)
     query = torch.cuda.LongTensor([obj_query])
     most_freq_label = torch.cuda.LongTensor([most_freq])
-    
+
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]

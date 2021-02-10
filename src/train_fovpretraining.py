@@ -6,6 +6,7 @@ from arguments import get_train_fovpretraining
 
 import numpy as np
 import os
+import json
 
 import torch
 import torch.nn as nn
@@ -29,6 +30,8 @@ from model_utils import get_confusion_matrix_image
 from model_utils import F1_Binary_Loss
 from model_utils import compute_precision_with_logits
 from model_utils import weights_init_uniform_rule
+from collections import Counter
+from pprint import pprint
 
 
 def get_fovpretraining_model(args, n_objects, n_directions,
@@ -144,9 +147,6 @@ def eval_epoch(data_iterator, model, optimizer, args,
       binary_preds = (preds > 0.5).float()
       binary_preds.requires_grad = True
 
-      binary_preds = (preds > 0.5).float()
-      binary_preds.requires_grad = True
-
       if task == 'task1':
         w = 10000.0
         weight_rebal = torch.ones_like(
@@ -159,7 +159,7 @@ def eval_epoch(data_iterator, model, optimizer, args,
       loss = loss_fn(preds, batch_targets)
 
       f1_score = f1_binary_loss(binary_preds, batch_targets)
-      acc = ((preds > 0.5) == batch_targets).float().mean()
+      acc = ((preds > 0.5).int() == batch_targets).float().mean()
 
       zero_acc = (torch.zeros_like(batch_targets)
                   == batch_targets).float().mean()
@@ -175,12 +175,17 @@ def eval_epoch(data_iterator, model, optimizer, args,
       ones_acc.append(one_acc.item())
       random_acc.append(r_acc.item())
 
-      log_string = 'f1: {:3.3f} mean-acc: {:3.3f} 0-acc: {:3.3f} 1-acc: {:3.3f} r-acc: {:3.3f}'.format(
+      binary_preds = (preds > 0.5).long()
+      binary_preds = Counter(['{}'.format(bp.item()) for bp in binary_preds])
+      binary_preds = json.dumps(binary_preds)
+
+      log_string = 'f1: {:3.3f} mean-acc: {:3.3f} 0-acc: {:3.3f} 1-acc: {:3.3f} r-acc: {:3.3f} preds : {:10s}'.format(
           np.mean(total_f1),
           np.mean(total_acc),
           np.mean(zeros_acc),
           np.mean(ones_acc),
-          np.mean(random_acc))
+          np.mean(random_acc),
+          binary_preds)
 
       if task == 'task1':
         pred_indices = [[] for bb in range(preds.size(0))]
@@ -275,7 +280,7 @@ def main():
   elif args.task == 'task4':
     Task = FoVTask4
   else:
-    raise NotImplementedError()
+    raise NotImplementedError('Task {} not implemented'.format(args.task))
 
   training_split = ['validation.seen'] if args.debug > 0 else [
       'train']
@@ -324,12 +329,6 @@ def main():
       shuffle=args.debug == 0
   )
 
-  data_path = '../py_bottom_up_attention/demo/data/genome/1600-400-20'
-  vg_classes = []
-  with open(os.path.join(data_path, 'objects_vocab.txt')) as f:
-    for object in f.readlines():
-      vg_classes.append(object.split(',')[0].lower().strip())
-
   vg2idx, idx2vg, obj_classes = get_object_dictionaries(args.obj_dict_file)
 
   model = get_fovpretraining_model(
@@ -349,6 +348,8 @@ def main():
 
   log_path = os.path.join(
       args.exp_dir, args.prefix + '/training.log')
+
+  print(json.dumps(vars(args), indent=2))
   for epoch in range(args.epoch):
 
     trn_log = 'trn E{:2d}'.format(epoch)

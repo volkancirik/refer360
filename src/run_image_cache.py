@@ -54,7 +54,7 @@ def compute_image_caches(splits,
 
 if __name__ == '__main__':
   from utils import SPLITS
-  compute_image_caches(SPLITS,
+  compute_image_caches(['train', 'val_seen', 'val_unseen', 'test'],
                        task='fov_pretraining',
                        data_root=sys.argv[1],
                        images='all')

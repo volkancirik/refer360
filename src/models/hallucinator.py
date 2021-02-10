@@ -4,10 +4,12 @@ from model_utils import FOV_EMB_SIZE
 from model_utils import build_fov_embedding
 from models.unet_3 import Unet3
 
+
 class Hallucinator(nn.Module):
   """
   Vision only unimodal baseline
   """
+
   def __init__(self, batch_size,
                hidden_size=128,
                n_actions=5,
@@ -36,16 +38,17 @@ class Hallucinator(nn.Module):
 
     if self.fov_emb_mode > 0:
       self.fov2logit = nn.Linear(FOV_EMB_SIZE, hidden_size)
-      self.fov2logit.bias.data.fill_(0)
+      self.fov2logit.bias.data.fill_(1)
     self.dropout = nn.Dropout(p=0.1)
+    self.SIGMOID = nn.Sigmoid()
 
   def forward(self, state):
     """
     forward of both actor and critic
     """
     x = state['im_batch']
-    x = x.reshape(x.size(0),x.size(1),x.size(2)*x.size(3))
-    x = x.permute(0,2,1)
+    x = x.reshape(x.size(0), x.size(1), x.size(2)*x.size(3))
+    x = x.permute(0, 2, 1)
 
     fmap_score = self.dropout(F.relu(self.fmap2score(x))).squeeze(2)
     #bn_pred = self.bn(pred)
@@ -70,12 +73,12 @@ class Hallucinator(nn.Module):
     else:
       raise NotImplementedError()
 
-    logits = self.ff_layer3(logits3)
+    logits = self.SIGMOID(self.ff_layer3(logits3))
 
     out = {}
     out['action_logits'] = logits
-    return out
 
+    return out
 
 
 from lxrt.entry import LXRTEncoder
