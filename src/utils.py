@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from PIL import Image
 from panoramic_camera_gpu import PanoramicCameraGPU as camera
-#from panoramic_camera import PanoramicCamera as camera
+# from panoramic_camera import PanoramicCamera as camera
 from pprint import pprint
 
 # dict of pano category to location category
@@ -121,7 +121,7 @@ def get_objects(move_x, move_y, nodes, vg2idx,
   return all_regions, all_obj_list
 
 
-def rad2degree(lat, lng,
+def rad2degree(xlng, ylat,
                adjust=False):
   '''Convert radians to degrees.
   '''
@@ -129,16 +129,16 @@ def rad2degree(lat, lng,
   adj_lat = 0
   adj_lng = 0
   if adjust:
-    adj_lat = -0.015
-    adj_lng = 0.1
+    adj_lng = -0.015
+    adj_lat = 0.1
 
-  lng = np.degrees(lng + adj_lng)
-  lat = np.degrees(lat + adj_lat)
+  xlng = np.degrees(xlng + adj_lng)
+  ylat = np.degrees(ylat + adj_lat)
 
 #  lat = (lat + 180) % 360
-  if lat > 180:
-    lat = lat - 360
-  return lat, lng
+  if xlng > 180:
+    xlng = xlng - 360
+  return xlng, ylat
 
 
 def generate_grid(full_w=4552,
@@ -157,12 +157,12 @@ def generate_grid(full_w=4552,
   objects = []
   nodes = []
 
-  for lng in range(-75, 75, degree):
-    for lat in range(0, 360, degree):
-      gt_x = int(full_w * ((lat)/360.0))
-      gt_y = int(full_h - full_h * ((lng + 90)/180.0))
+  for ylat in range(-75, 75, degree):
+    for xlng in range(0, 360, degree):
+      gt_x = int(full_w * ((xlng)/360.0))
+      gt_y = int(full_h - full_h * ((ylat + 90)/180.0))
 
-      objects.append((lat, lng, 2, gt_x, gt_y, []))
+      objects.append((xlng, ylat, 2, gt_x, gt_y, []))
       nodes.append([gt_x, gt_y])
 
   canvas = np.zeros((full_h, full_w, 3), dtype='uint8')
@@ -174,11 +174,11 @@ def generate_grid(full_w=4552,
     if o_type > 0:
       o_label = ''
 
-    #cv2.putText(canvas, o_label, (ox+size, oy+size), font, 3, clr, 5)
+    # cv2.putText(canvas, o_label, (ox+size, oy+size), font, 3, clr, 5)
     n = {
         'id': kk,
-        'lat': o[0],
-        'lng': o[1],
+        'xlng': o[0],
+        'ylat': o[1],
         'obj_label': o_label,
         'obj_id': o_type,
         'x': o[3],
@@ -234,13 +234,13 @@ def generate_gt_moves(image_path, move_list, move_ids,
   cam.load_img(image_path)
   for jj, (move_id, fovs) in enumerate(zip(move_ids, move_list)):
     for kk, fov in enumerate(fovs):
-      lat, lng = fov[0], fov[1]
-      cam.look(lat, lng)
+      xlng, ylat = fov[0], fov[1]
+      cam.look(xlng, ylat)
 
       fov_img = cam.get_image()
       fov_prefix = os.path.join(fov_root, '{}.gt_move.'.format(move_id))
       fov_file = fov_prefix + 'move{}.jpg'.format(kk)
-      #cv2.imwrite(fov_file, fov_img)
+      # cv2.imwrite(fov_file, fov_img)
       pil_img = Image.fromarray(fov_img)
       pil_img.save(fov_file)
 
@@ -256,12 +256,12 @@ def generate_fovs(image_path, node_path, fov_prefix,
                   allow_pickle=True)[()]
 
   for jj, n in enumerate(nodes.keys()):
-    idx, lat, lng = nodes[n]['id'], nodes[n]['lat'], nodes[n]['lng']
-    cam.look(lat, lng)
+    idx, xlng, ylat = nodes[n]['id'], nodes[n]['xlng'], nodes[n]['ylat']
+    cam.look(xlng, ylat)
 
     fov_img = cam.get_image()
     fov_file = fov_prefix + '{}.jpg'.format(idx)
-    #cv2.imwrite(fov_file, fov_img)
+    # cv2.imwrite(fov_file, fov_img)
     pil_img = Image.fromarray(fov_img)
     pil_img.save(fov_file)
 
@@ -275,22 +275,21 @@ def get_graph_hops(nodes, actions, image_path,
 
   all_fovs = []
 
-  for ii, inst in enumerate(actions[-1]['action_list'].split('_')):
+  for ii, inst in enumerate(actions[-1]['act_deg_list'].split('_')):
     kk = 0
     prev_lat, prev_lng = -1, -1
     fovs = []
     for jj, fov in enumerate(inst.split('|')[1:]):
-      rlat, rlng = float(fov.split(',')[0]), float(fov.split(',')[1])
-      if prev_lat == rlat and prev_lng == rlng:
+      xlng, ylat = fov
+      if prev_lat == ylat and prev_lng == xlng:
         continue
 
-      prev_lat, prev_lng = rlat, rlng
-      lat, lng = rad2degree(rlat, rlng, adjust=True)
-      fx = int(full_w * ((lat + 180)/360.0))
+      prev_lat, prev_lng = ylat, xlng
+      fx = int(full_w * ((xlng + 180)/360.0))
       fy = int(full_h - full_h *
-               ((lng + 90)/180.0))
+               ((ylat + 90)/180.0))
 
-      fovs.append((lat, lng, '{}.{}'.format(ii, kk), fx, fy))
+      fovs.append((xlng, ylat, '{}.{}'.format(ii, kk), fx, fy))
       kk += 1
     all_fovs.append(fovs)
 
@@ -324,8 +323,8 @@ def get_graph_hops(nodes, actions, image_path,
       n = gt_hops[sid][hid]
 
       f = {
-          'lat': fov[0],
-          'lng': fov[1],
+          'xlng': fov[0],
+          'ylat': fov[1],
           'label': fov[2],
           'x': fov[3],
           'y': fov[4],
@@ -344,39 +343,32 @@ def get_graph_hops(nodes, actions, image_path,
   return fov_dict, gt_hops, new_nodes
 
 
-def get_moves(instance, gt_lat, gt_lng, n_sentences,
+def get_moves(instance, gt_lng, gt_lat, sentences,
               verbose=False):
   '''Return ground-truth lat/lng.
   '''
-
+  n_sentences = len(sentences)
   all_moves = []
   ids = []
-  flag = False
+  flag = True
 
   for action in instance['actions']:
-    if len(action['action_list'].split('_')) != n_sentences:
-      flag = True
-      break
-    gt_moves = []
-    for moves in action['action_list'].split('_'):
-      move = moves.split('|')[-1]
 
-      latitude, longitude = rad2degree(
-          float(move.split(',')[0]), float(move.split(',')[1]), adjust=True)
-
-      gt_moves.append((latitude, longitude))
-
-    dist = ((gt_moves[-1][0] - gt_lat)**2 +
-            (gt_moves[-1][1] - gt_lng)**2) ** 0.5
-    if dist < 1:
+    if len(action['act_deg_list']) != n_sentences:
       continue
-    else:
-      all_moves.append(gt_moves)
-      ids.append(action['actionid'])
+    gt_moves = []
+    for moves in action['act_deg_list']:
+      move = moves[-1]
+      xlongitude, ylatitude = move
+      gt_moves.append((xlongitude, ylatitude))
+
+    all_moves.append(gt_moves)
+    ids.append(action['actionid'])
+    flag = False
 
   if verbose:
     for action in instance['actions']:
-      print(action['action_list'].split('_'))
+      print(action['act_deg_list'].split('_'))
       print('.')
     print('_')
     for moves in all_moves:
@@ -408,7 +400,8 @@ def dump_datasets(splits, image_categories, output_file,
                   full_w=4552,
                   full_h=2276,
                   obj_dict_file='../data/vg_object_dictionaries.all.json',
-                  degree=30):
+                  degree=30,
+                  use_gt_moves=True):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -420,7 +413,6 @@ def dump_datasets(splits, image_categories, output_file,
       quit(1)
   vg2idx = json.load(open(obj_dict_file, 'r'))['vg2idx']
 
-  banned_turkers = set(['onboarding', 'vcirik'])
   data_list = []
 
   all_sentences = []
@@ -438,186 +430,96 @@ def dump_datasets(splits, image_categories, output_file,
     instances = json.load(open('../data/{}.json'.format(split), 'r'))
 
     pbar = tqdm(instances)
+    count_err = 0
     for ii, instance in enumerate(pbar):
-      if instance['turkerid'] not in banned_turkers:
-        if 'ann_cat' in instance and instance['ann_cat'] == 'M' and split == 'train':
-          continue
-        datum = {}
+      if 'ann_cat' in instance and instance['ann_cat'] == 'M' and split == 'train':
+        continue
+      datum = {}
 
-        latitude, longitude = rad2degree(instance['latitude'],
-                                         instance['longitude'],
-                                         adjust=True)
+      xlongitude, ylatitude = instance['xlng_deg'], instance['ylat_deg'],
 
-        datum['annotationid'] = instance['annotationid']
-        datum["gt_lng"] = longitude
-        datum["gt_lat"] = latitude
+      datum['annotationid'] = instance['annotationid']
+      datum["gt_lng"] = xlongitude
+      datum["gt_lat"] = ylatitude
 
-        img_category = '_'.join(instance['imageurl'].split(
-            '/')[-1].split('.')[0].split('_')[2:])
-        pano_name = "_".join(instance['imageurl'].split(
-            '/')[-1].split('.')[0].split('_')[:2]) + ".jpg"
+      img_cat = instance['img_cat']
+      img_loc = instance['img_loc']
+      img_src = instance['img_src']
+      if img_cat not in CAT2LOC or img_cat not in image_set:
+        continue
 
-        if img_category not in CAT2LOC or img_category not in image_set:
-          continue
-        img_loc = CAT2LOC[img_category]
-        datum['pano'] = '../data/refer360images/{}/{}/{}'.format(
-            img_loc, img_category, pano_name)
-        datum['img_category'] = img_category
-        stats[img_loc] += 1
-        stats[img_category] += 1
-        sentences = []
-        sent_queue = []
-        for refexp in instance['refexp'].replace('\n', '').split('|||')[1:]:
-          if refexp[-1] not in ['.', '!', '?', '\'']:
-            refexp += '.'
-          sentences.append(refexp.split())
-          sent_queue += [refexp]
+      datum['img_src'] = img_src
+      datum['img_category'] = img_cat
+      stats[img_loc] += 1
+      stats[img_cat] += 1
 
-        err, all_moves, move_ids = get_moves(
-            instance, latitude, longitude, len(sentences))
+      sent_queue = []
+      sentences = instance['refexp']
+      for refexp in sentences:
+        sent_queue += [refexp]
 
-        if err or all_moves == [] or len(all_moves[0]) != len(sentences):
-          continue
+      err, all_moves, move_ids = get_moves(
+          instance, xlongitude, ylatitude, sentences)
 
-        pano = "_".join(instance['imageurl'].split(
-            '/')[-1].split('.')[0].split('_')[:2])
+      if use_gt_moves and (err or all_moves == [] or len(all_moves[0]) != len(sentences)):
+        count_err += 1
+        continue
 
-        datum['gt_moves'] = all_moves
-        datum['refexps'] = sentences
-        all_sentences += sent_queue
+      pano = instance['img_idx']
+      datum['gt_moves'] = all_moves
+      datum['refexps'] = sentences
+      all_sentences += sent_queue
 
-        if task == 'continuous_grounding':
-          data.append(datum)
-        if task == 'graph_grounding' and task_root != '':
-          node_path = os.path.join(task_root, '{}.npy'.format(pano))
-          node_img = os.path.join(task_root, '{}.jpg'.format(pano))
-          fov_prefix = os.path.join(task_root, '{}.fov'.format(pano))
-          nodes = np.load(node_path, allow_pickle=True)[()]
-          fovs, graph_hops, new_nodes = get_graph_hops(nodes,
-                                                       instance['actions'],
-                                                       datum['pano'])
-          assert len(sentences) == len(graph_hops)
-          datum['fovs'] = fovs
-          datum['graph_hops'] = graph_hops
-          datum['nodes'] = new_nodes
-          datum['node_img'] = node_img
-          datum['fov_prefix'] = fov_prefix
-          data.append(datum)
-        elif task == 'fov_pretraining' and task_root != '':
-          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
-          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
-          fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
-          nodes = np.load(node_path, allow_pickle=True)[()]
-          fovs, graph_hops, new_nodes = get_graph_hops(nodes,
-                                                       instance['actions'],
-                                                       datum['pano'])
+      if task == 'continuous_grounding':
+        data.append(datum)
+      if task == 'graph_grounding' and task_root != '':
+        node_path = os.path.join(task_root, '{}.npy'.format(pano))
+        node_img = os.path.join(task_root, '{}.jpg'.format(pano))
+        fov_prefix = os.path.join(task_root, '{}.fov'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+        fovs, graph_hops, new_nodes = get_graph_hops(nodes,
+                                                     instance['actions'],
+                                                     datum['img_src'])
+        assert len(sentences) == len(graph_hops)
+        datum['fovs'] = fovs
+        datum['graph_hops'] = graph_hops
+        datum['nodes'] = new_nodes
+        datum['node_img'] = node_img
+        datum['fov_prefix'] = fov_prefix
+        data.append(datum)
+      elif task == 'fov_pretraining' and task_root != '':
+        node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+        node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+        fov_prefix = os.path.join(graph_root, '{}.fov'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+        fovs, graph_hops, new_nodes = get_graph_hops(nodes,
+                                                     instance['actions'],
+                                                     datum['img_src'])
 
-          for moves, move_id in zip(all_moves, move_ids):
-            for mm, move in enumerate(moves):
-              mdatum = {}
-              mdatum['move_id'] = mm
-              mdatum['move_max'] = len(sentences)
-              mdatum['pano'] = datum['pano']
-              mdatum['actionid'] = move_id
-              mdatum['annotationid'] = instance['annotationid']
-
-              lat, lng = move[0], move[1]
-              mx = int(full_w * ((lat + 180)/360.0))
-              my = int(full_h - full_h *
-                       ((lng + 90)/180.0))
-
-              mdatum['latitude'] = move[0]
-              mdatum['longitude'] = move[1]
-              mdatum['x'] = mx
-              mdatum['y'] = my
-
-              mdatum['refexp'] = sentences[mm]
-              fov_prefix = os.path.join(
-                  task_root, '{}.gt_move.'.format(move_id))
-              fov_file = fov_prefix + 'move{}.jpg'.format(mm)
-              mdatum['fov_file'] = fov_file
-              regions, obj_list = get_objects(mx, my, nodes, vg2idx)
-              mdatum['regions'] = regions
-              mdatum['obj_list'] = obj_list
-
-              directions = [len(obj_list['canonical'][d]) > 0 for d in [
-                  'up', 'down', 'left', 'right']]
-
-              if any(directions):
-                data.append(mdatum)
-        elif task == 'grid_fov_pretraining' and task_root != '':
-          grid_nodes, _ = generate_grid(degree=degree)
-          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
-          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
-          nodes = np.load(node_path, allow_pickle=True)[()]
-
-          for n in grid_nodes:
-            node = grid_nodes[n]
-
+        for moves, move_id in zip(all_moves, move_ids):
+          for mm, move in enumerate(moves):
             mdatum = {}
-            fov_id = node['id']
-            mdatum['fov_id'] = fov_id
-
+            mdatum['move_id'] = mm
             mdatum['move_max'] = len(sentences)
-            mdatum['pano'] = datum['pano']
-            # mdatum['actionid'] = move_id
+            mdatum['img_src'] = datum['img_src']
+            mdatum['actionid'] = move_id
             mdatum['annotationid'] = instance['annotationid']
 
-            lat, lng = node['lat'], node['lng']
-            mx, my = node['x'], node['y']
-            mdatum['latitude'] = lat
-            mdatum['longitude'] = lng
+            xlng, ylat = move[0], move[1]
+            mx = int(full_w * ((xlng + 180)/360.0))
+            my = int(full_h - full_h *
+                     ((ylat + 90)/180.0))
+
+            mdatum['xlongitude'] = move[0]
+            mdatum['ylatitude'] = move[1]
+
             mdatum['x'] = mx
             mdatum['y'] = my
 
-            mdatum['refexps'] = sentences
-            fov_file = os.path.join(
-                task_root, '{}.fov{}.jpg'.format(pano, fov_id))
-
-            mdatum['fov_file'] = fov_file
-            regions, obj_list = get_objects(mx, my, nodes, vg2idx)
-            print('\n>>>>>>')
-            pprint(mdatum)
-            quit(1)
-            mdatum['regions'] = regions
-            mdatum['obj_list'] = obj_list
-
-            directions = [len(obj_list['canonical'][d]) > 0 for d in [
-                'up', 'down', 'left', 'right']]
-
-            if any(directions):
-              data.append(mdatum)
-        elif task == 'balanced_fov_pretraining' and task_root != '':
-          node_path = os.path.join(graph_root, '{}.npy'.format(pano))
-          node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
-          nodes = np.load(node_path, allow_pickle=True)[()]
-
-          node_path = os.path.join(task_root, '{}.npy'.format(pano))
-          balanced_nodes = np.load(node_path, allow_pickle=True)[()]
-
-          for n in balanced_nodes:
-            node = balanced_nodes[n]
-
-            mdatum = {}
-            fov_id = node['id']
-            mdatum['fov_id'] = fov_id
-
-            mdatum['move_max'] = len(sentences)
-            mdatum['pano'] = datum['pano']
-            # mdatum['actionid'] = move_id
-            mdatum['annotationid'] = instance['annotationid']
-
-            lat, lng = node['lat'], node['lng']
-            mx, my = node['x'], node['y']
-            mdatum['latitude'] = lat
-            mdatum['longitude'] = lng
-            mdatum['x'] = mx
-            mdatum['y'] = my
-
-            mdatum['refexps'] = sentences
-            fov_file = os.path.join(
-                task_root, '{}.fov{}.jpg'.format(pano, fov_id))
-
+            mdatum['refexp'] = sentences[mm]
+            fov_prefix = os.path.join(
+                task_root, '{}.gt_move.'.format(move_id))
+            fov_file = fov_prefix + 'move{}.jpg'.format(mm)
             mdatum['fov_file'] = fov_file
             regions, obj_list = get_objects(mx, my, nodes, vg2idx)
             mdatum['regions'] = regions
@@ -628,7 +530,89 @@ def dump_datasets(splits, image_categories, output_file,
 
             if any(directions):
               data.append(mdatum)
+      elif task == 'grid_fov_pretraining' and task_root != '':
+        grid_nodes, _ = generate_grid(degree=degree)
+        node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+        node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+
+        for n in grid_nodes:
+          node = grid_nodes[n]
+
+          mdatum = {}
+          fov_id = node['id']
+          mdatum['fov_id'] = fov_id
+
+          mdatum['move_max'] = len(sentences)
+          mdatum['img_src'] = datum['img_src']
+          # mdatum['actionid'] = move_id
+          mdatum['annotationid'] = instance['annotationid']
+
+          ylat, xlng = node['lat'], node['lng']
+          mx, my = node['x'], node['y']
+          mdatum['ylatitude'] = ylat
+          mdatum['xlongitude'] = xlng
+          mdatum['x'] = mx
+          mdatum['y'] = my
+
+          mdatum['refexps'] = sentences
+          fov_file = os.path.join(
+              task_root, '{}.fov{}.jpg'.format(pano, fov_id))
+
+          mdatum['fov_file'] = fov_file
+          regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+
+          mdatum['regions'] = regions
+          mdatum['obj_list'] = obj_list
+
+          directions = [len(obj_list['canonical'][d]) > 0 for d in [
+              'up', 'down', 'left', 'right']]
+
+          if any(directions):
+            data.append(mdatum)
+      elif task == 'balanced_fov_pretraining' and task_root != '':
+        node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+        node_img = os.path.join(graph_root, '{}.jpg'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+
+        node_path = os.path.join(task_root, '{}.npy'.format(pano))
+        balanced_nodes = np.load(node_path, allow_pickle=True)[()]
+
+        for n in balanced_nodes:
+          node = balanced_nodes[n]
+
+          mdatum = {}
+          fov_id = node['id']
+          mdatum['fov_id'] = fov_id
+
+          mdatum['move_max'] = len(sentences)
+          mdatum['img_src'] = datum['img_src']
+          # mdatum['actionid'] = move_id
+          mdatum['annotationid'] = instance['annotationid']
+
+          ylat, xlng = node['lat'], node['lng']
+          mx, my = node['x'], node['y']
+          mdatum['xlongitude'] = xlng
+          mdatum['ylatitude'] = ylat
+          mdatum['x'] = mx
+          mdatum['y'] = my
+
+          mdatum['refexps'] = sentences
+          fov_file = os.path.join(
+              task_root, '{}.fov{}.jpg'.format(pano, fov_id))
+
+          mdatum['fov_file'] = fov_file
+          regions, obj_list = get_objects(mx, my, nodes, vg2idx)
+          mdatum['regions'] = regions
+          mdatum['obj_list'] = obj_list
+
+          directions = [len(obj_list['canonical'][d]) > 0 for d in [
+              'up', 'down', 'left', 'right']]
+
+          if any(directions):
+            data.append(mdatum)
     data_list.append(data)
+    print('{} instances have errors'.format(count_err))
     pbar.close()
 
   print('_'*20)
@@ -636,7 +620,8 @@ def dump_datasets(splits, image_categories, output_file,
     print('{:<16} {:2.2f}'.format(c, stats[c]))
   print('_'*20)
 
-  print('Dumping to {}'.format(output_file))
+  n_instances = sum([len(l) for l in data_list])
+  print('Dumping {} instances to {}'.format(n_instances, output_file))
   np.save(open(output_file, 'wb'), {'data_list': data_list,
                                     'sentences': all_sentences})
 #  return data_list, all_sentences
@@ -687,12 +672,12 @@ def dump_mp3d_datasets(splits, output_file,
         fov_id = node['id']
         mdatum['fov_id'] = fov_id
 
-        mdatum['pano'] = pano
+        mdatum['img_src'] = pano
 
-        lat, lng = node['lat'], node['lng']
+        ylat, xlng = node['lat'], node['lng']
         mx, my = node['x'], node['y']
-        mdatum['latitude'] = lat
-        mdatum['longitude'] = lng
+        mdatum['ylatitude'] = ylat
+        mdatum['xlongitude'] = xlng
         mdatum['x'] = mx
         mdatum['y'] = my
 

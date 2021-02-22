@@ -10,10 +10,10 @@ import torch
 
 FOV_SIZE = 100
 DEGREES = 15
-__look__ = {1: (0, DEGREES),
-            2: (0, -DEGREES),
-            3: (DEGREES, 0),
-            4: (-DEGREES, 0),
+__look__ = {1: (DEGREES, 0),
+            2: (-DEGREES, 0),
+            3: (0, DEGREES),
+            4: (0, -DEGREES),
             }
 
 
@@ -60,7 +60,7 @@ def run_random_agent():
   threshold = 1.0 / max_step
 
   for epoch in range(n_epochs):
-    im_batch, observations = ref360env.next()
+    observations = ref360env.next()
 
     done_list = [False]*batch_size
     distances = [0]*batch_size
@@ -109,7 +109,7 @@ def run_random_agent():
                         torch.tensor([argmax_x, armgax_y]).cuda(),
                         torch.tensor(pred).float().cuda()))
 
-      im_batch, _, _, observations = ref360env.step(actions)
+      observations, _, _ = ref360env.step(actions)
       if all(done_list):
         break
 

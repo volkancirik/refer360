@@ -1,7 +1,7 @@
 '''Finder is a model with actor, memory, and localizer modules.
 '''
 import torchvision.models as models
-
+import torch
 import torch.nn as nn
 from models.td_models import clones
 from model_utils import vectorize_seq
@@ -97,7 +97,12 @@ class Finder(nn.Module):
       kwargs['instruction'] = instruction
       loc_pred = self.localizer(kwargs)
     else:
-      images = self.cnn(observations['im_batch'])
+      print('\n>>>>len(observations)', len(observations['observations']))
+      batch_size = len(observations['observations'])
+      im_batch = torch.zeros(64, 3, 7, 7).cuda()
+      im_batch = torch.zeros(batch_size, 3, 400, 400).cuda()
+      #images = self.cnn(observations['im_batch'])
+      images = self.cnn(im_batch)
       loc_pred = self.localizer(images, texts, seq_lengths.cpu(), **kwargs)
 
     obs = loc_pred.reshape(

@@ -23,7 +23,7 @@ from torch.distributions import Categorical
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from collections import defaultdict
-import gc
+from pprint import pprint
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
 torch.backends.cudnn.benchmark = True
@@ -186,7 +186,7 @@ def eval_epoch(ref360env, model, optimizer, args,
   verbose = args.verbose
 
   ref360env.reset_epoch()
-  im_batch, observations = ref360env.next()
+  observations = ref360env.next()
 
   n_updates = int(len(ref360env) / args.batch_size)
   if verbose:
@@ -222,14 +222,14 @@ def eval_epoch(ref360env, model, optimizer, args,
                           'refexps': o['refexps']}
 
     for _step in range(max_step):
-      state = {'im_batch': im_batch, 'observations': observations}
+      state = {'observations': observations}
       out, rnn_hidden = select_action(model, state, done_set,
                                       rnn_hidden=rnn_hidden,
                                       greedy=args.greedy,
                                       random_agent=args.random_agent)
 
       actions = out['actions']
-      im_batch, rewards, done_list, observations = ref360env.step(
+      observations, rewards, done_list = ref360env.step(
           actions, life_penalty=-(_step+1))
 
       for kk, o in enumerate(observations):
@@ -286,7 +286,7 @@ def eval_epoch(ref360env, model, optimizer, args,
 
     losses = finish_episode(
         model, optimizer, args.clip, update=update)
-    im_batch, observations = ref360env.next()
+    observations = ref360env.next()
 
     for loss_type in losses:
       epoch_losses[loss_type].append(losses[loss_type])
@@ -346,7 +346,7 @@ def eval_epoch(ref360env, model, optimizer, args,
 def main():
   parser = get_train_rl()
   args = parser.parse_args()
-
+  pprint(vars(args))
   writer = SummaryWriter(os.path.join(args.exp_dir, args.prefix))
 
   trn_ref360env = Refer360Batch(batch_size=args.batch_size,

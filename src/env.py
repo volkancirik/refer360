@@ -15,7 +15,39 @@ import torch
 from collections import defaultdict
 from PIL import Image
 EPS = 1e-10
-FOV_SIZE = 400
+FOV_SIZE = 200
+
+
+def look_direction(xlng=0,
+                   ylat=0,
+                   xdiff=0,
+                   ydiff=0):
+
+  xlng += xdiff
+  ylat += ydiff
+
+  ylat = min(max(-90, ylat), 90)
+  if ylat < -90:
+    ylat = -90 - (ylat + 90)
+    xlng = xlng + 180
+  elif ylat > 90:
+    ylat = 90 - (ylat - 90)
+    xlng = xlng + 180
+
+  if xlng > 180:
+    xlng = xlng - 360
+  elif xlng < -180:
+    xlng = xlng + 360
+
+  return xlng, ylat
+
+
+ACTION2ID = {
+    'right': 1,
+    'left': 2,
+    'up': 3,
+    'down': 4
+}
 
 
 class EnvBatch():
@@ -32,12 +64,13 @@ class EnvBatch():
     '''
 
     self.degrees = degrees
-    self.__look__ = {1: (0, self.degrees),
-                     2: (0, -self.degrees),
-                     3: (self.degrees, 0),
-                     4: (-self.degrees, 0),
+    self.__look__ = {1: (self.degrees, 0),  # look right (xlng)
+                     2: (-self.degrees, 0),  # look left (xlng)
+                     3: (0, self.degrees),  # look up (ylat)
+                     4: (0, -self.degrees),  # look down (ylat),
                      }
-
+    # TODO: test all right/left/up/down instructions
+    # TODO: make longitude move circular
     if use_gpu_camera:
       camera = gpu_camera
       print('gpu camera will be used')
@@ -89,61 +122,37 @@ class EnvBatch():
 
       if not self._done[ii]:
         if navigate in [1, 2, 3, 4]:
-          longitude = self.cameras[ii].lng + self.__look__[navigate][1]
-          latitude = self.cameras[ii].lat + self.__look__[navigate][0]
+          xlng, ylat = look_direction(xlng=self.cameras[ii].xlng,
+                                      ylat=self.cameras[ii].ylat,
+                                      xdiff=self.__look__[navigate][0],
+                                      ydiff=self.__look__[navigate][1])
 
-          # if long < -90 or long > 90 lat switches to other side
-          longitude = min(max(-90, longitude), 90)
-          if longitude < -90:
-            longitude = -90 - (longitude + 90)
-            latitude = latitude + 180
-          elif longitude > 90:
-            longitude = 90 - (longitude - 90)
-            latitude = latitude + 180
+          self.cameras[ii].xlng = xlng
+          self.cameras[ii].ylat = ylat
 
-          if latitude > 180:
-            latitude = latitude - 360
-          elif latitude < -180:
-            latitude = latitude + 360
-
-          self.cameras[ii].lng = longitude
-          self.cameras[ii].lat = latitude
-
-          self.cameras[ii].look(latitude, longitude)
+          self.cameras[ii].look(xlng, ylat)
 
   def look_ahead(self):
     '''Take a step in 4 directions.
     '''
 
     for ii in range(self.batch_size):
-      orig_lat = self.cameras[ii].lat
-      orig_lng = self.cameras[ii].lng
+      orig_xlng = self.cameras[ii].xlng
+      orig_ylat = self.cameras[ii].ylat
       neighbors = [np.zeros((FOV_SIZE, FOV_SIZE, 3), dtype='uint8')]*5
       if not self._done[ii]:
         img = self.cameras[ii].get_image()
         neighbors = [img]
         for navigate in [1, 2, 3, 4]:
-          longitude = orig_lng + self.__look__[navigate][1]
-          latitude = orig_lat + self.__look__[navigate][0]
+          xlng, ylat = look_direction(xlng=self.cameras[ii].xlng,
+                                      ylat=self.cameras[ii].ylat,
+                                      xdiff=self.__look__[navigate][0],
+                                      ydiff=self.__look__[navigate][1])
 
-          longitude = min(max(-90, longitude), 90)
-          if longitude < -90:
-            longitude = -90 - (longitude + 90)
-            latitude = latitude + 180
-          elif longitude > 90:
-            longitude = 90 - (longitude - 90)
-            latitude = latitude + 180
-
-          if latitude > 180:
-            latitude = latitude - 360
-          elif latitude < -180:
-            latitude = latitude + 360
-
-          self.cameras[ii].look(latitude, longitude)
+          self.cameras[ii].look(xlng, ylat)
           img = self.cameras[ii].get_image()
           neighbors.append(img)
-        self.cameras[ii].look(orig_lat, orig_lng)
-
+        self.cameras[ii].look(orig_xlng, orig_ylat)
       self.cameras[ii].neighbors = neighbors
 
 
@@ -190,6 +199,7 @@ class Refer360Batch():
     # load splits
     self.vocab = None
 
+    # load connectivitiy of nodes
     connectivity = []
     for ii, split_name in enumerate(splits):
       data_split, sentences = load_datasets([split_name], self.images)
@@ -218,8 +228,8 @@ class Refer360Batch():
     if self.use_sentences:
       self.sentence_ids = [0 for ii in range(self.batch_size)]
     self.oracle_mode = oracle_mode
-    self.diff_threshold = 20
-    self.coor_threshold = 20
+    self.diff_threshold = 10
+    self.coor_threshold = 10
     self.preprocess = transforms.Compose([
         transforms.ToTensor(),
     ])
@@ -250,43 +260,40 @@ class Refer360Batch():
     datum = self.batch[idx]
 
     # shifting from -180,180 to 0,360
-    latitude = self.env.cameras[idx].lat + 180
-    longitude = self.env.cameras[idx].lng
+    xlng = self.env.cameras[idx].xlng
+    ylat = self.env.cameras[idx].ylat
 
     # find shortest-path action
-    gt_lng = datum['gt_lng']
-    gt_lat = datum['gt_lat']
-    lng_diff = 0
-    lat_diff = 0
+    gt_xlng = datum['gt_lng']
+    gt_ylat = datum['gt_lat']
 
     pred, argmax_pred = torch.tensor([]).cuda(), torch.tensor([]).cuda()
-    lng_diff = gt_lng - longitude
+    ylat_diff = gt_ylat - ylat
     coor = None
 
-    gt_lat = datum['gt_lat'] + 180
-    gt_lng = datum['gt_lng']
-
-    if gt_lat < latitude:
-      dist1 = latitude - gt_lat  # r->l distance
-      dist2 = gt_lat + 360 - latitude  # l->r distance
+    if gt_xlng < xlng:
+      dist1 = xlng - gt_xlng  # r->l distance
+      dist2 = gt_xlng + 360 - xlng  # l->r distance
     else:
-      dist2 = gt_lat - latitude  # l->r
-      dist1 = latitude + 360 - gt_lat  # r->l
+      dist2 = gt_xlng - xlng  # l->r
+      dist1 = xlng + 360 - gt_xlng  # r->l
     if dist2 < dist1:  # move right
-      gt_action = 3
-      lat_diff = dist2
+      gt_action = ACTION2ID['right']
+      xlng_diff = dist2
     else:  # move left
-      gt_action = 4
-      lat_diff = dist1
-    if np.abs(lng_diff) > lat_diff:
-      gt_action = 1 if lng_diff > 0 else 2
+      gt_action = ACTION2ID['left']
+      xlng_diff = dist1
+    if np.abs(ylat_diff) > xlng_diff:
+      gt_action = ACTION2ID['up'] if ylat_diff > 0 else ACTION2ID['down']
 
-    if np.abs(lat_diff) + np.abs(lng_diff) < self.diff_threshold:
+    if np.abs(ylat_diff) + np.abs(xlng_diff) < self.diff_threshold:
+
+       # TODO: check coor returns x,y
       coor = self.env.cameras[idx].get_image_coordinate_for(
           datum['gt_lat'], datum['gt_lng'])
       if coor and self.coor_threshold <= coor[1] <= FOV_SIZE-self.coor_threshold and self.coor_threshold <= coor[0] <= FOV_SIZE-self.coor_threshold:
-        # FIX FoV=400 but pred FoV is 100
-        x, y = int(coor[1]/4), int(coor[0]/4)
+        # TODO: FoV=200 but pred FoV is 100
+        x, y = int(coor[0]/2), int(coor[1]/2)
         pred = gaussian_target(x, y, height=100, width=100)
         argmax_pred = torch.tensor([x, y]).cuda()
         gt_action = 0
@@ -295,12 +302,10 @@ class Refer360Batch():
     return gt_tuple, coor
 
   def _get_obs(self):
-    '''Returns a list of information and meta-data
+    '''Returns a list of observations
     '''
     # keep a list of metadata
     observations = []
-    # keep a list of image observations
-    im_stack = []
 
     if self.use_look_ahead:
       self.env.look_ahead()
@@ -311,10 +316,6 @@ class Refer360Batch():
       # Check dimension order
       perspective_image = state[0]
       pixel_map = state[1]
-
-      pil_img = Image.fromarray(perspective_image)
-      img_tensor = self.preprocess(pil_img)
-      im_stack.append(img_tensor.unsqueeze(0))
 
       if self.use_sentences:
         refexps = [datum['refexps'][self.sentence_ids[ii]]]
@@ -335,27 +336,26 @@ class Refer360Batch():
           'gt_lng': datum['gt_lng'],
           'gt_tuple': gt_tuple,
           'gt_coor': gt_coor,
-          'pano': datum['pano'],
+          'img_src': datum['img_src'],
           'img': perspective_image,
           'pixel_map': pixel_map,
-          'latitude': self.env.cameras[ii].lat,
-          'longitude': self.env.cameras[ii].lng,
+          'latitude': self.env.cameras[ii].ylat,
+          'longitude': self.env.cameras[ii].xlng,
           'neighbors': self.env.cameras[ii].neighbors,
       })
-    im_batch = torch.cat(im_stack, 0).cuda()
-    return im_batch, observations
+    return observations
 
   def reset_panos(self):
     '''Random start lat/lng
     '''
     for ii in range(self.batch_size):
-      slat, slng = rad2degree(np.random.uniform(0, 6),
+      xlng, ylat = rad2degree(np.random.uniform(0, 6),
                               np.random.uniform(1, 1.5))
 
-      self.env.cameras[ii].lng = slng
-      self.env.cameras[ii].lat = slat
+      self.env.cameras[ii].xlng = xlng
+      self.env.cameras[ii].ylat = ylat
       self.env.cameras[ii].look(
-          self.env.cameras[ii].lat, self.env.cameras[ii].lng)
+          self.env.cameras[ii].xlng, self.env.cameras[ii].ylat)
 
   def reset_epoch(self):
     '''Resets the epoch.
@@ -367,24 +367,24 @@ class Refer360Batch():
     '''
     self._next_minibatch()
 
-    pano_paths = [datum['pano'] for datum in self.batch]
+    pano_paths = [datum['img_src'] for datum in self.batch]
     self.sentence_max = [len(datum['gt_moves'][0]) for datum in self.batch]
     self.sentence_ids = [0 for ii in range(self.batch_size)]
     if self.oracle_mode:
       gt_loc = []
       for ii, datum in enumerate(self.batch):
-        latitude = datum['gt_lat']
-        longitude = datum['gt_lng']
-        gt_x = int(width * ((latitude)/360.0))
-        gt_y = height - int(height * ((longitude + 90)/180.0))
-        gt_loc.append((gt_y, gt_x))
+        ylat = datum['gt_lat']
+        xlng = datum['gt_lng']
+        gt_x = int(width * ((xlng)/360.0))
+        gt_y = height - int(height * ((ylat + 90)/180.0))
+        gt_loc.append((gt_x, gt_y))
     else:
       gt_loc = [None]*self.batch_size
 
     self.env.newEpisodes(pano_paths, gt_loc=gt_loc)
     self.reset_panos()
-    obs, infos = self._get_obs()
-    return obs, infos
+    obs = self._get_obs()
+    return obs
 
   def _reset_predictions(self):
     '''Reset the predictions
@@ -394,6 +394,7 @@ class Refer360Batch():
   def nextSentence(self):
     '''Retrurn the next sentence.
     '''
+    # TODO: test next sentence
     for ii in range(self.batch_size):
       if self.sentence_ids[ii] < self.sentence_max[ii] - 1:
         self.sentence_ids[ii] += 1
@@ -402,14 +403,15 @@ class Refer360Batch():
   def nextStartPoint(self):
     '''Jump to the next ground-truth location.
     '''
+    # TODO: test next starting point
     for ii in range(self.batch_size):
       n_sentence = self.sentence_ids[ii]
-      self.env.cameras[ii].lng = self.batch[ii]['gt_moves'][0][n_sentence][1]
-      self.env.cameras[ii].lat = self.batch[ii]['gt_moves'][0][n_sentence][0]
-      self.env.cameras[ii].look(
-          self.env.cameras[ii].lat, self.env.cameras[ii].lng)
-    obs, infos = self._get_obs()
-    return obs, infos
+      self.env.cameras[ii].xlng = self.batch[ii]['gt_moves'][0][n_sentence][0]
+      self.env.cameras[ii].ylat = self.batch[ii]['gt_moves'][0][n_sentence][1]
+      self.env.cameras[ii].look(self.env.cameras[ii].xlng,
+                                self.env.cameras[ii].ylat)
+    obs = self._get_obs()
+    return obs
 
   def eval_batch(self):
     '''Evaluate the batch.
@@ -418,19 +420,19 @@ class Refer360Batch():
     for ii in range(self.batch_size):
       if self.predictions[ii]:
         pred_loc, gt_loc, in_fov = self.predictions[ii]
-        if gt_loc[0] == 0 and gt_loc[1] == 0:
+        if gt_loc[0] == 0 and gt_loc[1] == 0:  # no prediction
           distance = (100*np.sqrt(2))
         else:
           distance = np.sqrt(((pred_loc[0] - gt_loc[0])
                               ** 2 + (pred_loc[1] - gt_loc[1])**2))
 
-        for th in [40, 80, 120]:
+        for th in [20, 40, 60]:
           metrics['acc_{}'.format(th)] += int(distance <= th)
         metrics['fov'] += in_fov
         metrics['distance'] += distance
       else:
         metrics['distance'] += (100*np.sqrt(2))
-        for th in [40, 80, 120]:
+        for th in [20, 40, 60]:
           metrics['acc_{}'.format(th)] += 0
         metrics['fov'] += 0.0
 
@@ -444,41 +446,42 @@ class Refer360Batch():
     self.env.makeActions(action_tuples)
 
     reward = [life_penalty]*self.batch_size
-    obs, infos = self._get_obs()
+    obs = self._get_obs()
     for ii, action in enumerate(action_tuples):
       navigate, argmax_pred, pred = action
       navigate = navigate.item()
+
      # for unfinished environment set the reward
       if not self.env._done[ii]:
         datum = self.batch[ii]
         coor = self.env.cameras[ii].get_image_coordinate_for(
-            datum['gt_lat'], datum['gt_lng'])
+            datum['gt_lng'], datum['gt_lat'])
 
         if coor:  # waldo is in the fov
-          gt_x, gt_y = int(coor[1]/4), int(coor[0]/4)
+          gt_x, gt_y = int(coor[0]/4), int(coor[1]/4)
           # if the agent makes a prediction
           if navigate == 0:
             # return negative of kl_loss as reward
             kl_loss = smoothed_gaussian(pred, gt_x, gt_y,
                                         height=100, width=100)
             kl_loss = kl_loss.item()
-            reward[ii] = (-kl_loss)*1000
+            reward[ii] = (-kl_loss)*1000  # TODO: make coefficient a parameter
             self.predictions[ii] = (
                 argmax_pred.cpu().numpy(), (gt_x, gt_y), 1.)
             self.env._done[ii] = True
           else:
-            reward[ii] = 100.
+            reward[ii] = 100.  # TODO: make reward a parameter
             self.predictions[ii] = ((0, 0), (0, 0), 1.)
             self.env._done[ii] = True
         else:
           if navigate == 0:
             # waldo is not in fov
-            reward[ii] = -10.  # *life_penalty*2
+            reward[ii] = -10.  # TODO: make reward a parameter
             self.predictions[ii] = ((0, 0), (0, 0), 0.)
             self.env._done[ii] = True
           elif navigate in set([1, 2, 3, 4]):
-            d = (self.env.ii[cameras].lat - datum['gt_lat'])**2
-            d += (self.env.cameras[ii].lng - datum['gt_lng'])**2
+            d = (self.env.cameras[ii].ylat - datum['gt_lat'])**2
+            d += (self.env.cameras[ii].xlng - datum['gt_lng'])**2
             d = d**0.5
             reward[ii] -= d
             self.predictions[ii] = ((0, 0), (0, 0), 0.)
@@ -498,4 +501,4 @@ class Refer360Batch():
           # self.env._done[ii] = True
 
     reward = torch.from_numpy(np.array([reward])).permute(1, 0).float()
-    return obs, reward, np.array(self.env._done), infos
+    return obs, reward, np.array(self.env._done)
