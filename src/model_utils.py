@@ -22,7 +22,7 @@ from matplotlib.pyplot import cm
 import matplotlib.pyplot as plt
 from torchvision.transforms import ToTensor
 
-
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 MIN_BOXES = 36
 MAX_BOXES = 36
 
@@ -47,7 +47,7 @@ def gaussian_target(gt_x, gt_y, sigma=3.0,
   '''Based on https://github.com/lil-lab/touchdown/tree/master/sdr
   '''
   target = torch.tensor([[coord_gaussian(x, y, gt_x, gt_y, sigma)
-                          for x in range(width)] for y in range(height)]).float().cuda()
+                          for x in range(width)] for y in range(height)]).float().to(DEVICE)
   return target
 
 
@@ -158,7 +158,7 @@ def build_fov_embedding(latitude, longitude):
   [cos(longitude) for _ in range(1, 33)]
   """
   quarter = int(FOV_EMB_SIZE / 4)
-  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).cuda()
+  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).to(DEVICE)
 
   embedding[:,  0:quarter*1] = torch.sin(latitude)
   embedding[:, quarter*1:quarter*2] = torch.cos(latitude)
@@ -193,7 +193,7 @@ def fast_rcnn_inference_single_image(
   max_scores, max_classes = scores.max(1)       # R x C --> R
   num_objs = boxes.size(0)
   boxes = boxes.view(-1, 4)
-  idxs = torch.arange(num_objs).cuda() * num_bbox_reg_classes + max_classes
+  idxs = torch.arange(num_objs).to(DEVICE) * num_bbox_reg_classes + max_classes
   max_boxes = boxes[idxs]     # Select max boxes according to the max scores.
 
   # Apply NMS
@@ -286,7 +286,7 @@ def extract_detectron2_features(detector, raw_images):
 def compute_precision_with_logits(logits, labels_vector,
                                   precision_k=1,
                                   mask=None):
-  labels = torch.zeros(*logits.size()).cuda()
+  labels = torch.zeros(*logits.size()).to(DEVICE)
   for ll in range(logits.size(0)):
     labels[ll, :].scatter_(0, labels_vector[ll], 1)
 
@@ -294,7 +294,7 @@ def compute_precision_with_logits(logits, labels_vector,
   if type(mask) != type(None):
     labels = labels * mask.unsqueeze(0).expand(labels.size())
     adjust_score = True
-  one_hots = torch.zeros(*labels.size()).cuda()
+  one_hots = torch.zeros(*labels.size()).to(DEVICE)
   logits = torch.sort(logits, 1, descending=True)[1]
   one_hots.scatter_(1, logits[:, :precision_k], 1)
 
@@ -303,7 +303,7 @@ def compute_precision_with_logits(logits, labels_vector,
   if adjust_score:
     valid_rows = (labels.sum(1) > 0).sum(0)
     if valid_rows == 0:
-      scores = torch.tensor(1.0).cuda()
+      scores = torch.tensor(1.0).to(DEVICE)
     else:
       hit = (scores * batch_size)
       scores = hit / valid_rows
@@ -332,7 +332,7 @@ def vectorize_seq(sequences, vocab, emb_dim, cuda=False, permute=False):
     seq_tensor = seq_tensor.permute(1, 0)
     emb_mask = emb_mask.permute(1, 0, 2)
   if cuda:
-    return seq_tensor.cuda(), mask.cuda(), emb_mask.cuda(), seq_lengths.cuda()
+    return seq_tensor.to(DEVICE), mask.to(DEVICE), emb_mask.to(DEVICE), seq_lengths.to(DEVICE)
   return seq_tensor, mask, emb_mask, seq_lengths
 
 

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from models.unet_3 import Unet3
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from model_utils import vectorize_seq, PositionalEncoding, FOV_EMB_SIZE, build_fov_embedding
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class VisionOnly(nn.Module):
@@ -25,7 +26,7 @@ class VisionOnly(nn.Module):
                fov_emb_mode=2):
     super(VisionOnly, self).__init__()
 
-    self.unet = Unet3(2048, 4, hidden_size).cuda().eval()
+    self.unet = Unet3(2048, 4, hidden_size).to(DEVICE).eval()
 
     # actor's layer
     self.n_actions = n_actions

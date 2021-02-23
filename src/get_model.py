@@ -1,3 +1,7 @@
+import torch
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
 def get_model(args, vocab, n_actions=5):
   '''Returns a Finder model.
   '''
@@ -13,4 +17,4 @@ def get_model(args, vocab, n_actions=5):
   else:
     finder = Finder
 
-  return finder(args, vocab, n_actions).cuda()
+  return finder(args, vocab, n_actions).to(DEVICE)

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from model_utils import PositionalEncoding
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class VisualBert(nn.Module):
@@ -59,8 +60,8 @@ class VisualBert(nn.Module):
     batch_size = texts_mask.size(0)
     text_encoding = self.encoder(texts)
 
-    image_mask = torch.ones(batch_size, 169).cuda().bool()
-    image_emb_mask = torch.ones(169, batch_size, 512).cuda()
+    image_mask = torch.ones(batch_size, 169).to(DEVICE).bool()
+    image_emb_mask = torch.ones(169, batch_size, 512).to(DEVICE)
     image_encoding = images.reshape(batch_size, 512, 169).permute(2, 0, 1)
 
     fused_mask = torch.cat([image_mask, texts_mask], dim=1)

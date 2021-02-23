@@ -28,7 +28,7 @@ SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
 torch.backends.cudnn.benchmark = True
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
-#device = torch.device('cuda')
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def select_action(model, state, done_list,
@@ -44,7 +44,7 @@ def select_action(model, state, done_list,
       'action_logits'], model_out['state_values'], model_out['loc_pred']
 
   if random_agent:
-    sampling_logits = torch.ones(*action_logits.size()).cuda()
+    sampling_logits = torch.ones(*action_logits.size()).to(DEVICE)
   else:
     sampling_logits = action_logits
 
@@ -93,7 +93,7 @@ def calculate_policy_loss(saved_actions, rewards, gamma=0.99):
   policy_loss = 0.0
   for (log_prob, value), R in zip(saved_actions, returns):
     policy_loss = policy_loss + (-log_prob * R)
-  return policy_loss, torch.tensor(0.0).cuda()
+  return policy_loss, torch.tensor(0.0).to(DEVICE)
 
 
 def calculate_actor_critic(saved_actions, rewards, gamma=0.99):
@@ -122,7 +122,7 @@ def calculate_actor_critic(saved_actions, rewards, gamma=0.99):
 
     policy_loss = policy_loss + (-log_prob * advantage)
     value_loss = value_loss + \
-        (F.smooth_l1_loss(value, torch.tensor([R]).cuda()))
+        (F.smooth_l1_loss(value, torch.tensor([R]).to(DEVICE)))
   return policy_loss, value_loss
 
 
@@ -195,7 +195,7 @@ def eval_epoch(ref360env, model, optimizer, args,
     pbar = range(n_updates)
 
   rnn_hidden = torch.zeros(args.n_layers,
-                           batch_size, args.n_hid).cuda()
+                           batch_size, args.n_hid).to(DEVICE)
 
   for bid in pbar:
     done_list = [False]*batch_size

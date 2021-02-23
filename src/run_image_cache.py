@@ -8,6 +8,7 @@ from tqdm import tqdm
 from fov_pretraining import load_fovpretraining_splits
 from PIL import Image
 import sys
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def compute_image_caches(splits,
@@ -25,9 +26,9 @@ def compute_image_caches(splits,
   else:
     raise NotImplementedError()
 
-  resnetmodel = models.resnet152(pretrained=True).cuda()
+  resnetmodel = models.resnet152(pretrained=True).to(DEVICE)
   newmodel = torch.nn.Sequential(
-      *(list(resnetmodel.children())[:-2])).cuda()
+      *(list(resnetmodel.children())[:-2])).to(DEVICE)
   for p in newmodel.parameters():
     newmodel.requires_grad = False
   preprocess = transforms.Compose([
@@ -45,7 +46,7 @@ def compute_image_caches(splits,
 
     image_obj = Image.open(filename)
     img_tensor = preprocess(image_obj)
-    feats = newmodel(img_tensor.cuda().unsqueeze(0)).squeeze(0)
+    feats = newmodel(img_tensor.to(DEVICE).unsqueeze(0)).squeeze(0)
     feats = feats.cpu().detach().numpy()
 
     np.save(img_feat_path, feats)

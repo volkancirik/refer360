@@ -9,6 +9,7 @@ import os
 import torch
 import random
 from tqdm import tqdm
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def load_fovpretraining_splits(splits,
@@ -161,7 +162,7 @@ class FoVPretrainingDataset(Dataset):
     fov_file = self.fov_files[index]
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
-    image = torch.cuda.FloatTensor(img_features)
+    image = torch.FloatTensor(img_features).to(DEVICE)
     return image
 
   def __len__(self):
@@ -186,8 +187,8 @@ class FoVTask1(FoVPretrainingDataset):
   def __getitem__(self, index):
 
     (lat, lng) = self.fovs[index]
-    latitude = torch.cuda.FloatTensor([lat])
-    longitude = torch.cuda.FloatTensor([lng])
+    latitude = torch.FloatTensor([lat]).to(DEVICE)
+    longitude = torch.FloatTensor([lng]).to(DEVICE)
 
     fov_file = self.fov_files[index]
     regions = self.regions[index]
@@ -197,12 +198,12 @@ class FoVTask1(FoVPretrainingDataset):
 
     n_objects = len(self.vg2idx)
 
-    image = torch.cuda.FloatTensor(img_features)
+    image = torch.FloatTensor(img_features).to(DEVICE)
 
     targets = []
     for dir in DIRECTIONS[self.direction]:
-      targets.append(torch.cuda.FloatTensor(
-          regions[self.direction][dir]).resize(1, n_objects))
+      targets.append(torch.FloatTensor(
+          regions[self.direction][dir]).resize(1, n_objects).to(DEVICE))
     target = torch.cat(targets,
                        axis=1).squeeze(0)
 
@@ -210,8 +211,8 @@ class FoVTask1(FoVPretrainingDataset):
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]
 
-      boxes = torch.cuda.FloatTensor(img_info['boxes'].copy())
-      feats = torch.cuda.FloatTensor(img_info['features'].copy())
+      boxes = torch.FloatTensor(img_info['boxes'].copy()).to(DEVICE)
+      feats = torch.FloatTensor(img_info['features'].copy()).to(DEVICE)
 
       img_h, img_w = img_info['img_h'], img_info['img_w']
       boxes[..., (0, 2)] /= img_w
@@ -240,8 +241,8 @@ class FoVTask2(FoVPretrainingDataset):
 
     (lat, lng) = self.fovs[index]
 
-    latitude = torch.cuda.FloatTensor([lat])
-    longitude = torch.cuda.FloatTensor([lng])
+    latitude = torch.FloatTensor([lat]).to(DEVICE)
+    longitude = torch.FloatTensor([lng]).to(DEVICE)
 
     fov_file = self.fov_files[index]
 
@@ -256,17 +257,17 @@ class FoVTask2(FoVPretrainingDataset):
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
 
-    image = torch.cuda.FloatTensor(img_features)
-    query = torch.cuda.LongTensor([obj_query])
-    direction = torch.cuda.FloatTensor([obj_direction])
-    most_freq_label = torch.cuda.LongTensor([most_freq])
+    image = torch.FloatTensor(img_features).to(DEVICE)
+    query = torch.LongTensor([obj_query]).to(DEVICE)
+    direction = torch.FloatTensor([obj_direction]).to(DEVICE)
+    most_freq_label = torch.LongTensor([most_freq]).to(DEVICE)
 
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]
 
-      boxes = torch.cuda.FloatTensor(img_info['boxes'].copy())
-      feats = torch.cuda.FloatTensor(img_info['features'].copy())
+      boxes = torch.FloatTensor(img_info['boxes'].copy()).to(DEVICE)
+      feats = torch.FloatTensor(img_info['features'].copy()).to(DEVICE)
 
       img_h, img_w = img_info['img_h'], img_info['img_w']
       boxes[..., (0, 2)] /= img_w
@@ -324,8 +325,8 @@ class FoVTask3(FoVPretrainingDataset):
   def __getitem__(self, index):
 
     (lat, lng) = self.fovs[index]
-    latitude = torch.cuda.FloatTensor([lat])
-    longitude = torch.cuda.FloatTensor([lng])
+    latitude = torch.FloatTensor([lat]).to(DEVICE)
+    longitude = torch.FloatTensor([lng]).to(DEVICE)
 
     fov_file = self.fov_files[index]
 
@@ -340,9 +341,9 @@ class FoVTask3(FoVPretrainingDataset):
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
 
-    image = torch.cuda.FloatTensor(img_features)
-    query = torch.cuda.LongTensor([obj_query])
-    most_freq_label = torch.cuda.LongTensor([most_freq])
+    image = torch.FloatTensor(img_features).to(DEVICE)
+    query = torch.LongTensor([obj_query]).to(DEVICE)
+    most_freq_label = torch.LongTensor([most_freq]).to(DEVICE)
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
 
@@ -350,17 +351,17 @@ class FoVTask3(FoVPretrainingDataset):
                         ).difference(self.fov2obj[fov_file]))
     if random.randint(0, 1) == 1 and len(diff_set) > 0:
       obj_query = random.choice(diff_set)
-      query = torch.cuda.LongTensor([obj_query])
-      presence = torch.cuda.FloatTensor([0])
+      query = torch.LongTensor([obj_query]).to(DEVICE)
+      presence = torch.FloatTensor([0]).to(DEVICE)
     else:
-      presence = torch.cuda.FloatTensor([1])
+      presence = torch.FloatTensor([1]).to(DEVICE)
 
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]
 
-      boxes = torch.cuda.FloatTensor(img_info['boxes'].copy())
-      feats = torch.cuda.FloatTensor(img_info['features'].copy())
+      boxes = torch.FloatTensor(img_info['boxes'].copy()).to(DEVICE)
+      feats = torch.FloatTensor(img_info['features'].copy()).to(DEVICE)
 
       img_h, img_w = img_info['img_h'], img_info['img_w']
       boxes[..., (0, 2)] /= img_w
@@ -406,29 +407,29 @@ class FoVTask4(FoVTask3):
     if random.randint(0, 1) == 1 and len(not_present):
       fov_rnd = random.choice(list(not_present))
       index = self.pano2idx[fov_rnd]
-      presence = torch.cuda.FloatTensor([0])
+      presence = torch.FloatTensor([0]).to(DEVICE)
     else:
-      presence = torch.cuda.FloatTensor([1])
+      presence = torch.FloatTensor([1]).to(DEVICE)
 
     (lat, lng) = self.fovs[index]
-    latitude = torch.cuda.FloatTensor([lat])
-    longitude = torch.cuda.FloatTensor([lng])
+    latitude = torch.FloatTensor([lat]).to(DEVICE)
+    longitude = torch.FloatTensor([lng]).to(DEVICE)
 
     fov_file = self.fov_files[index]
 
     img_feat_path = fov_file.replace('.jpg', '.feat.npy')
     img_features = np.load(img_feat_path)
 
-    image = torch.cuda.FloatTensor(img_features)
-    query = torch.cuda.LongTensor([obj_query])
-    most_freq_label = torch.cuda.LongTensor([most_freq])
+    image = torch.FloatTensor(img_features).to(DEVICE)
+    query = torch.LongTensor([obj_query]).to(DEVICE)
+    most_freq_label = torch.LongTensor([most_freq]).to(DEVICE)
 
     if self.use_objects:
       img_id = fov_file.split('/')[-1].replace('.jpg', '')
       img_info = self.imgid2img[img_id]
 
-      boxes = torch.cuda.FloatTensor(img_info['boxes'].copy())
-      feats = torch.cuda.FloatTensor(img_info['features'].copy())
+      boxes = torch.FloatTensor(img_info['boxes'].copy()).to(DEVICE)
+      feats = torch.FloatTensor(img_info['features'].copy()).to(DEVICE)
 
       img_h, img_w = img_info['img_h'], img_info['img_w']
       boxes[..., (0, 2)] /= img_w

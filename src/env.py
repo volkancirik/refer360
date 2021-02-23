@@ -16,6 +16,7 @@ from collections import defaultdict
 from PIL import Image
 EPS = 1e-10
 FOV_SIZE = 200
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def look_direction(xlng=0,
@@ -267,7 +268,8 @@ class Refer360Batch():
     gt_xlng = datum['gt_lng']
     gt_ylat = datum['gt_lat']
 
-    pred, argmax_pred = torch.tensor([]).cuda(), torch.tensor([]).cuda()
+    pred, argmax_pred = torch.tensor([]).to(
+        DEVICE), torch.tensor([]).to(DEVICE)
     ylat_diff = gt_ylat - ylat
     coor = None
 
@@ -295,7 +297,7 @@ class Refer360Batch():
         # TODO: FoV=200 but pred FoV is 100
         x, y = int(coor[0]/2), int(coor[1]/2)
         pred = gaussian_target(x, y, height=100, width=100)
-        argmax_pred = torch.tensor([x, y]).cuda()
+        argmax_pred = torch.tensor([x, y]).to(DEVICE)
         gt_action = 0
 
     gt_tuple = (torch.tensor(gt_action), argmax_pred, pred)

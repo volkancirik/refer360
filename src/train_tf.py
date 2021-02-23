@@ -24,6 +24,7 @@ from model_utils import smoothed_gaussian
 from train_rl import select_action
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def eval_epoch(ref360env, model, optimizer, args,
@@ -69,7 +70,7 @@ def eval_epoch(ref360env, model, optimizer, args,
       batch_metrics[metric] = [list() for kk in range(batch_size)]
     done_set = set()
     rnn_hidden = torch.zeros(args.n_layers,
-                             batch_size, args.n_hid).cuda()
+                             batch_size, args.n_hid).to(DEVICE)
 
     history = {}
     for o in observations:
@@ -106,7 +107,7 @@ def eval_epoch(ref360env, model, optimizer, args,
         gt_tuples = [o['gt_tuple'] for o in state['observations']]
         gt_coors = [o['gt_coor'] for o in state['observations']]
         gt_actions = torch.tensor([o['gt_tuple'][0].item()
-                                   for o in state['observations']]).cuda()
+                                   for o in state['observations']]).to(DEVICE)
 
         loss_action = CELoss(out['action_logits'],
                              gt_actions)
@@ -124,7 +125,7 @@ def eval_epoch(ref360env, model, optimizer, args,
             loss_mask += [1]
           else:
             loss_mask += [0]
-        loss_mask = torch.tensor(loss_mask).cuda()
+        loss_mask = torch.tensor(loss_mask).to(DEVICE)
         loss_action_total = torch.sum(loss_action * loss_mask)
         loss = loss_action_total + loss_pred
         losses['action'].append(loss_action_total.item())

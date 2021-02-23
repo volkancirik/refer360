@@ -7,7 +7,7 @@ import json
 import numpy as np
 import os
 import torch
-
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 FOV_SIZE = 100
 DEGREES = 15
 __look__ = {1: (DEGREES, 0),
@@ -71,7 +71,7 @@ def run_random_agent():
                           'lng_diffs': [],
                           'start_lng': float(o['latitude']),
                           'start_lat': float(o['longitude']),
-                          'pano': o['pano'],
+                          'img_src': o['img_src'],
                           'pred_lat': 0,
                           'pred_lng': 0}
 
@@ -89,8 +89,8 @@ def run_random_agent():
         pred = np.zeros((FOV_SIZE, FOV_SIZE))
         if sample >= threshold or _step <= max_step / 2:
           navigate = torch.tensor(np.array(np.random.choice([1, 2, 3, 4])))
-          lng_diff = __look__[navigate.item()][1]
-          lat_diff = __look__[navigate.item()][0]
+          lng_diff = __look__[navigate.item()][0]
+          lat_diff = __look__[navigate.item()][1]
 
           history[o['id']]['lng_diffs'].append(lng_diff)
           history[o['id']]['lat_diffs'].append(lat_diff)
@@ -105,9 +105,9 @@ def run_random_agent():
           distances[ii] = (pred_lat - o['latitude'])**2 + \
               (pred_lng - o['longitude'])**2
 
-        actions.append((navigate.cuda(),
-                        torch.tensor([argmax_x, armgax_y]).cuda(),
-                        torch.tensor(pred).float().cuda()))
+        actions.append((navigate.to(DEVICE),
+                        torch.tensor([argmax_x, armgax_y]).to(DEVICE),
+                        torch.tensor(pred).float().to(DEVICE)))
 
       observations, _, _ = ref360env.step(actions)
       if all(done_list):

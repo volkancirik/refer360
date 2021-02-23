@@ -1,6 +1,9 @@
 """
 RL agent playing the game
 """
+from arguments import get_train_rl_sentence2sentence
+from train_rl import finish_episode
+from train_rl import select_action
 import paths
 from get_model import get_model
 from env import Refer360Batch
@@ -20,9 +23,7 @@ from collections import defaultdict
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 eps = np.finfo(np.float32).eps.item()
 
-from train_rl import select_action
-from train_rl import finish_episode
-from arguments import get_train_rl_sentence2sentence
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def eval_epoch(ref360env, model, optimizer, args,
@@ -78,7 +79,7 @@ def eval_epoch(ref360env, model, optimizer, args,
       done_set = set()
       done_list = [False]*batch_size
       rnn_hidden = torch.zeros(args.n_layers,
-                               batch_size, args.n_hid).cuda()
+                               batch_size, args.n_hid).to(DEVICE)
 
       for _step in range(max_step):
         state = {'im_batch': im_batch, 'observations': observations}

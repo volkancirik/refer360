@@ -4,12 +4,14 @@ adapted from here :  https://github.com/fuenwang/Equirec2Perspec/blob/master/Equ
 '''
 import cv2
 import numpy as np
+import time
+from scipy.spatial import cKDTree
 
 
 class PanoramicCamera:
   def __init__(self, fov=90, output_image_shape=(400, 400)):
-    """Init the camera.
-    """
+    '''Init the camera.
+    '''
     self.fov = fov
     self.output_image_h = output_image_shape[0]
     self.output_image_w = output_image_shape[1]
@@ -21,8 +23,8 @@ class PanoramicCamera:
     self._img = None
 
   def load_img(self, img_path, gt_loc=None, convert_color=True):
-    """Load image for the camera.
-    """
+    '''Load image for the camera.
+    '''
 
     self.img_path = img_path
 
@@ -42,8 +44,8 @@ class PanoramicCamera:
                 gt_loc[0]-50: gt_loc[0]+50, 1:] = 0
 
   def look(self, xlng, ylat):
-    """Look at xlng, ylat
-    """
+    '''Look at xlng, ylat
+    '''
     self.xlng = xlng
     self.ylat = ylat
 
@@ -51,32 +53,83 @@ class PanoramicCamera:
                        self.output_image_h, self.output_image_w)
 
   def get_image(self):
-    """Return the image in the FoV
-    """
+    '''Return the image in the FoV
+    '''
     image = cv2.remap(self._img, self.xlng_map, self.ylat_map,
                       cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_WRAP)
     return image
 
+  def get_inverse_map(self):
+    '''Returns inverse mapping.
+    '''
+    full_h, full_w = self._height, self._width
+    h, w = self.output_image_h, self.output_image_w
+    mapx_inverse = np.zeros((full_h, full_w))
+    mapy_inverse = np.zeros((full_h, full_w))
+    mapx, mapy = self.xlng_map, self.ylat_map
+
+    s = time.time()
+
+    data = []
+    coords = []
+    for j in range(w):
+      for i in range(h):
+        data.append([mapx[i, j], mapy[i, j]])
+        coords.append((i, j))
+    data = np.array(data)
+    tree = cKDTree(data, leafsize=16, compact_nodes=True, balanced_tree=True)
+
+    coords.append((0, 0))  # extra coords for failed neighbour search
+
+    e1 = time.time()
+    print("Tree creation took {:0.2f} seconds".format(e1-s))
+
+    x = np.linspace(0.0, full_w, num=full_w, endpoint=False)
+    y = np.linspace(0.0, full_h, num=full_h, endpoint=False)
+    pts = np.array(np.meshgrid(x, y)).T.reshape(-1, 2)
+    distances, indices = tree.query(pts, k=5, p=2, distance_upper_bound=5.0)
+
+    e2 = time.time()
+    print("Tree query took {:0.2f} seconds".format(e2-e1))
+
+    for (x, y), ds, idxs in zip(pts.astype(np.uint16), distances, indices):
+      wsum_i = 0
+      wsum_j = 0
+      wsum = np.finfo(float).eps
+      for d, idx in zip(ds, idxs):
+        w = 1.0 / (d*d)
+        wsum += w
+        wsum_i += w*coords[idx][0]
+        wsum_j += w*coords[idx][1]
+      wsum_i /= wsum
+      wsum_j /= wsum
+      mapx_inverse[y, x] = wsum_j
+      mapy_inverse[y, x] = wsum_i
+
+    e3 = time.time()
+    print("Weighted sums took {:0.2f} seconds".format(e3-e2))
+    return mapx_inverse, mapy_inverse
+
   def get_map(self):
-    """Return the map.
-    """
+    '''Return the map.
+    '''
 
     xlng_map = (self.xlng_map / self._width) * 360.0 - 180.0
     ylat_map = ((self.ylat_map / self._height) * 180.0 - 90.0) * -1.0
     return np.stack((xlng_map, ylat_map), axis=2)
 
   def get_pixel_map(self):
-    """Return the pixel map.
-    """
+    '''Return the pixel map.
+    '''
     xlng_map = self.xlng_map
     ylat_map = self.ylat_map
 
-    return xlng_map.astype(int), ylat_map.astype(int)
+    return xlng_map, ylat_map
 
   @staticmethod
   def find_nearest(array, value):
-    """Find the nearest coordinates for given lat,lng
-    """
+    '''Find the nearest coordinates for given lat, lng
+    '''
     y_distances = array[:, :, 1] - value[1]
     x_distances = array[:, :, 0] - value[0]
 
@@ -85,8 +138,8 @@ class PanoramicCamera:
     return np.unravel_index(idx, array[:, :, 0].shape)
 
   def get_image_coordinate_for(self, xlng, ylat):
-    """Return coordinates for given lng,lat
-    """
+    '''Return coordinates for given lng, lat
+    '''
     coords = PanoramicCamera.find_nearest(self.get_map(), (xlng, ylat))
 
     # given lng,lat may not be in the FoV
@@ -96,8 +149,8 @@ class PanoramicCamera:
     return coords
 
   def _calculateMap(self, FOV, THETA, PHI, height, width, RADIUS=128.0):
-    """Calculate the pixel map.
-    """
+    '''Calculate the pixel map.
+    '''
     equ_h = self._height
     equ_w = self._width
     equ_cx = (equ_w - 1) / 2.0

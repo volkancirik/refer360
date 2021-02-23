@@ -63,4 +63,4 @@ def get_localizer(args, n_vocab):
   print('using {} localizer'.format(args.model))
   print('using raw image {}'.format(args.use_raw_image))
   print('using masks {}'.format(args.use_masks))
-  return model.cuda()
+  return model.to(DEVICE)

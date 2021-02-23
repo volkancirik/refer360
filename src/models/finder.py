@@ -1,5 +1,6 @@
 '''Finder is a model with actor, memory, and localizer modules.
 '''
+from get_localizer import get_localizer
 import torchvision.models as models
 import torch
 import torch.nn as nn
@@ -7,7 +8,7 @@ from models.td_models import clones
 from model_utils import vectorize_seq
 LOG_ZERO_PROB = -10000
 
-from get_localizer import get_localizer
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Actor(nn.Module):
@@ -56,7 +57,7 @@ class Finder(nn.Module):
     self.n_layers = args.n_layers
 
     self.cnn = nn.Sequential(
-        *(list(models.resnet18(pretrained=True).children())[:-args.cnn_layer])).cuda().eval()
+        *(list(models.resnet18(pretrained=True).children())[:-args.cnn_layer])).to(DEVICE).eval()
 
     self.localizer = get_localizer(args, self.n_vocab)
 
@@ -99,8 +100,8 @@ class Finder(nn.Module):
     else:
       print('\n>>>>len(observations)', len(observations['observations']))
       batch_size = len(observations['observations'])
-      im_batch = torch.zeros(64, 3, 7, 7).cuda()
-      im_batch = torch.zeros(batch_size, 3, 400, 400).cuda()
+      im_batch = torch.zeros(64, 3, 7, 7).to(DEVICE)
+      im_batch = torch.zeros(batch_size, 3, 400, 400).to(DEVICE)
       #images = self.cnn(observations['im_batch'])
       images = self.cnn(im_batch)
       loc_pred = self.localizer(images, texts, seq_lengths.cpu(), **kwargs)
