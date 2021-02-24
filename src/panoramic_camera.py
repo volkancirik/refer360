@@ -4,7 +4,9 @@ adapted from here :  https://github.com/fuenwang/Equirec2Perspec/blob/master/Equ
 '''
 import cv2
 import numpy as np
-import time
+import os
+from tqdm import tqdm
+
 from scipy.spatial import cKDTree
 
 
@@ -21,6 +23,39 @@ class PanoramicCamera:
 
     self.img_path = ''
     self._img = None
+
+  def load_maps(self, cache_root):
+    '''Loads precomputed maps.
+    '''
+    map_prefix = os.path.join(
+        cache_root, 'maps')
+    meta_file = os.path.join(cache_root, 'meta.npy')
+    meta = np.load(meta_file, allow_pickle=True)[()]
+    nodes = meta['nodes']
+
+    self.masks = {}
+    self.lng_maps = {}
+    self.lat_maps = {}
+
+    print('loading maps...')
+    pbar = tqdm(nodes)
+    for n in pbar:
+      node = nodes[n]
+      idx = node['idx']
+      mask_file = os.path.join(map_prefix, '{}.mask.jpg'.format(idx))
+      mask = cv2.imread(mask_file)
+      maps_file = os.path.join(map_prefix, '{}.map.npy'.format(idx))
+      maps_data = np.load(maps_file, allow_pickle=True)[()]
+      self.lng_maps[idx] = maps_data['lng_map']
+      self.lat_maps[idx] = maps_data['lat_map']
+      self.masks[idx] = mask
+
+  def look_fov(self, idx):
+    '''Look at xlng, ylat
+    '''
+    self.xlng_map = self.lng_maps[idx]
+    self.ylat_map = self.lat_maps[idx]
+    self.mask = self.masks[idx]
 
   def load_img(self, img_path, gt_loc=None, convert_color=True):
     '''Load image for the camera.
@@ -68,8 +103,6 @@ class PanoramicCamera:
     mapy_inverse = np.zeros((full_h, full_w))
     mapx, mapy = self.xlng_map, self.ylat_map
 
-    s = time.time()
-
     data = []
     coords = []
     for j in range(w):
@@ -81,16 +114,10 @@ class PanoramicCamera:
 
     coords.append((0, 0))  # extra coords for failed neighbour search
 
-    e1 = time.time()
-    print("Tree creation took {:0.2f} seconds".format(e1-s))
-
     x = np.linspace(0.0, full_w, num=full_w, endpoint=False)
     y = np.linspace(0.0, full_h, num=full_h, endpoint=False)
     pts = np.array(np.meshgrid(x, y)).T.reshape(-1, 2)
     distances, indices = tree.query(pts, k=5, p=2, distance_upper_bound=5.0)
-
-    e2 = time.time()
-    print("Tree query took {:0.2f} seconds".format(e2-e1))
 
     for (x, y), ds, idxs in zip(pts.astype(np.uint16), distances, indices):
       wsum_i = 0
@@ -106,8 +133,6 @@ class PanoramicCamera:
       mapx_inverse[y, x] = wsum_j
       mapy_inverse[y, x] = wsum_i
 
-    e3 = time.time()
-    print("Weighted sums took {:0.2f} seconds".format(e3-e2))
     return mapx_inverse, mapy_inverse
 
   def get_map(self):

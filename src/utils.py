@@ -39,6 +39,16 @@ DIRECTIONS = {
 }
 
 
+def get_coordinates(xlng, ylat,
+                    full_w=4552,
+                    full_h=2276):
+  '''given lng lat returns coordinates in panorama image
+  '''
+  x = int(full_w * ((xlng + 180)/360.0))
+  y = int(full_h - full_h * ((ylat + 90)/180.0))
+  return x, y
+
+
 def get_object_dictionaries(obj_dict_file):
   '''Loads object object dictionaries
   visual genome -> idx2
