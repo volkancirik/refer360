@@ -1,22 +1,22 @@
+from utils import get_coordinates
+import networkx as nx
+from panoramic_camera import PanoramicCamera as camera
+from torchvision import transforms
+import torch
+import torchvision.models as models
+from tqdm import tqdm
+import os
+import cv2
+import sys
 import numpy as np
 
 from PIL import Image
 import matplotlib.pyplot as plt
 plt.rcdefaults()
 
-import sys
-import cv2
-import os
-from tqdm import tqdm
-import torchvision.models as models
-import torch
-from torchvision import transforms
 
 sys.path.append('../src')
-from panoramic_camera import PanoramicCamera as camera
-import networkx as nx
 
-from utils import get_coordinates
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 color_gray = (125, 125, 125)
@@ -347,7 +347,7 @@ def run_generate_cache():
 
   resnetmodel = models.resnet152(pretrained=True).to(DEVICE)
   model = torch.nn.Sequential(
-      *(list(resnetmodel.children())[:-2])).to(DEVICE)
+      *(list(resnetmodel.children())[:-1])).to(DEVICE)
   for p in model.parameters():
     model.requires_grad = False
   preprocess = transforms.Compose([
@@ -364,7 +364,6 @@ def run_generate_cache():
     fov_prefix = os.path.join(
         out_root, 'fovs', '{}'.format(pano))
     dump_features(model, preprocess, nodes, features_prefix, fov_prefix)
-    quit(0)
 
 
 if __name__ == '__main__':
