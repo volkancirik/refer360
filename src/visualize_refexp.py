@@ -134,6 +134,7 @@ if __name__ == '__main__':
       n_steps = len(gt_path)
     cam.look_fov(gt_path[fov_id])
     img = cam.get_image()
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     curr_x, curr_y = cam.get_current()
     lng_map, lat_map = cam.get_pixel_map()
     mask = cam.get_mask()

@@ -1,7 +1,7 @@
 '''
 Cached Panoramic camera to generate perspective for equirectangular images.
 '''
-import cv2
+from PIL import Image
 import numpy as np
 import os
 from tqdm import tqdm
@@ -52,7 +52,8 @@ class CachedPanoramicCamera:
       if not os.path.exists(fov_file):
         print('file missing:', fov_file)
         quit(0)
-      fov = cv2.imread(fov_file)
+
+      fov = np.array(Image.open(fov_file))
       self.fovs[idx] = fov
     print('loaded fovs for', pano)
 
@@ -72,7 +73,8 @@ class CachedPanoramicCamera:
       node = self.nodes[n]
       idx = node['idx']
       mask_file = os.path.join(map_prefix, '{}.mask.jpg'.format(idx))
-      mask = cv2.imread(mask_file)
+
+      mask = np.array(Image.open(mask_file))
       maps_file = os.path.join(map_prefix, '{}.map.npy'.format(idx))
       maps_data = np.load(maps_file, allow_pickle=True)[()]
       self.lng_maps[idx] = maps_data['lng_map']
@@ -104,12 +106,7 @@ class CachedPanoramicCamera:
     '''
     self.img_path = img_path
 
-    img = cv2.imread(
-        self.img_path, cv2.IMREAD_COLOR)
-    if convert_color:
-      self._img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    else:
-      self._img = img
+    self._img = np.array(Image.open(self.img_path))
 
     [self._height, self._width, _] = self._img.shape
 
@@ -129,9 +126,8 @@ class CachedPanoramicCamera:
     '''
     if self.fov is not None:
       return self.fov
-    image = cv2.remap(self._img, self.xlng_map, self.ylat_map,
-                      cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_WRAP)
-    return image
+    print('load cached FoVs.')
+    quit(1)
 
   def get_inverse_map(self):
     '''Returns inverse mapping.
