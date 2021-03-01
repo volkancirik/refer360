@@ -37,6 +37,26 @@ DIRECTIONS = {
     'canonical_proximity': ['close_up', 'close_down', 'close_left', 'close_right',
                             'far_up', 'far_down', 'far_left', 'far_right']
 }
+color_gray = (125, 125, 125)
+color_dark = (25, 25, 25)
+
+color_red = (255, 0, 0)
+color_green = (0, 255, 0)
+color_blue = (0, 0, 255)
+color_yellow = (255, 255, 0)
+color_white = (255, 255, 255)
+
+
+def get_nearest(node_dict, x, y):
+  '''returns the nearest fov to given x,y
+  '''
+  min_d = np.float('inf')
+  for n in node_dict:
+    d = ((x - node_dict[n]['x'])**2 + (y - node_dict[n]['y'])**2)**0.5
+    if d < min_d:
+      min_d = d
+      min_n = n
+  return min_n, min_d
 
 
 def get_coordinates(xlng, ylat,
@@ -718,6 +738,78 @@ def dump_mp3d_datasets(splits, output_file,
   print('Dumping to {}'.format(output_file))
   np.save(open(output_file, 'wb'), {'data_list': data_list,
                                     'sentences': []})
+
+
+def visualize_path(path, node_dict, edges, canvas, size=20):
+
+  n_start = node_dict[path[0]]
+
+  ox, oy = n_start['x'], n_start['y']
+  add_square(canvas, ox, oy,
+             size=size,
+             color=color_white)
+  prev_node = path[0]
+  for n in path[1:]:
+
+    node = node_dict[n]
+    ox, oy = node['x'], node['y']
+    add_square(canvas, ox, oy,
+               size=size,
+               color=color_yellow)
+
+    if (prev_node, n) in edges:
+      ns, ne = edges[prev_node, n]
+
+      sx = ns[0]
+      sy = ns[1]
+      ex = ne[0]
+      ey = ne[1]
+
+      if 4552-72 <= sx <= 4552 <= ex:
+        if sx < 4552:
+          cv2.line(canvas,
+                   (sx, sy),
+                   (4552, ey),
+                   (255, 255, 0), 8, 8)
+        cv2.line(canvas,
+                 (0, sy),
+                 (ex % 4552, ey),
+                 (255, 255, 0), 8, 8)
+      elif sx <= 72 and 4552 <= ex:
+        if sx > 0:
+          cv2.line(canvas,
+                   (sx, sy),
+                   (0, ey),
+                   (255, 255, 0), 8, 8)
+        cv2.line(canvas,
+                 (4552, sy),
+                 (4552 - ex % 4552, ey),
+                 (255, 255, 0), 8, 8)
+      elif 4552 < sx:
+        cv2.line(canvas,
+                 (sx - 4552, sy),
+                 (0, ey),
+                 (255, 255, 0), 8, 8)
+      else:
+        cv2.line(canvas,
+                 (sx, sy),
+                 (ex, ey),
+                 (255, 255, 0), 8, 8)
+    prev_node = n
+
+  n_end = node_dict[path[-1]]
+
+  ox, oy = n_end['x'], n_end['y']
+  add_square(canvas, ox, oy,
+             size=size,
+             color=color_blue)
+  return canvas
+
+
+def add_square(canvas, x, y,
+               size=20,
+               color=(255, 255, 255)):
+  canvas[y-size:y+size, x-size:x+size, :] = color
 
 
 def add_overlay(src, trg, coor,

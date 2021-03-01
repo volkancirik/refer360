@@ -17,3 +17,4 @@ conda install -c conda-forge spacy -y
 conda install seaborn -y
 conda install scikit-learn -y
 python -m spacy download en_core_web_sm
+python -m ipykernel install --user --name refer360 --display-name "refer360"
