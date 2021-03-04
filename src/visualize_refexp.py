@@ -1,4 +1,3 @@
-from model_utils import get_det2_features
 import os
 import numpy as np
 from utils import add_overlay
@@ -7,13 +6,14 @@ from utils import get_nearest
 from utils import visualize_path
 from utils import add_square
 from utils import color_red, color_green, color_blue
+from utils import SPLITS
 import json
 import panoramic_camera_cached as camera
 import random
 import sys
 import cv2
 import matplotlib
-
+from pprint import pprint
 usage = '''
 
 argv[1] : annotation id, leave empty for a random one
@@ -27,8 +27,9 @@ matplotlib.use('Agg')
 
 def load_datum(datum, cam):
 
-  refer = ".".join([" ".join(refexp) for refexp in datum['refexp']])
-  n_steps = len(datum['act_deg_list'][0])
+  refer = "\n".join([" ".join(refexp) for refexp in datum['refexp']])
+  pprint(datum)
+  n_steps = len(datum['act_deg_list'])
   image_path = datum['img_src']
 
   waldo_position_lng = datum['gt_longitude']
@@ -62,15 +63,21 @@ def load_datum(datum, cam):
   add_square(panels['grid'], gt_x, gt_y, color=color_green)
   add_square(panels['grid'], pred_x, pred_y, color=color_red)
 
-  gt_path = []
-  for kk, act in enumerate(datum['act_deg_list'][0]):
+  start_loc = datum['act_deg_list'][0][0]
+  start_x, start_y = get_coordinates(start_loc[0], start_loc[1],
+                                     full_w=full_w,
+                                     full_h=full_h)
+  start_fov, _ = get_nearest(nodes, start_x, start_y)
+  gt_path = [start_fov]
+  for kk, act_list in enumerate(datum['act_deg_list']):
+    act = act_list[-1]
     lng, lat = act
     x, y = get_coordinates(lng, lat,
                            full_w=full_w,
                            full_h=full_h)
 
     min_n, _ = get_nearest(nodes, x, y)
-    if len(gt_path) == 0 or gt_path[-1] != min_n:
+    if gt_path[-1] != min_n:
       gt_path.append(min_n)
     if len(gt_path) >= 2:
       start = gt_path[-2]
@@ -78,6 +85,8 @@ def load_datum(datum, cam):
       intermediate_path = cam.paths[start][end]
       panels['grid'] = visualize_path(
           intermediate_path, cam.nodes, cam.edges, panels['grid'])
+      print('intermediate_path:', intermediate_path)
+  print('gt_path:', gt_path)
   return image_path, gt_path, panels, waldo_position_lng, waldo_position_lat, pred_lng, pred_lat
 
 
@@ -100,15 +109,18 @@ if __name__ == '__main__':
   target_img = cv2.resize(cv2.imread(
       '../data/target.png', cv2.IMREAD_COLOR), (60, 60), interpolation=cv2.INTER_AREA)
 
-  data = json.load(open('../data/train.json'))
+  data_list = [json.load(open('../data/{}.json'.format(split)))
+               for split in SPLITS]
   act_instances = {}
-  for instance in data:
-    for action in instance['actions']:
-      action['img_src'] = instance['img_src']
-      action['refexp'] = instance['refexp']
-      action['gt_longitude'] = instance['xlng_deg']
-      action['gt_latitude'] = instance['ylat_deg']
-      act_instances[action['actionid']] = action
+
+  for data in data_list:
+    for instance in data:
+      for action in instance['actions']:
+        action['img_src'] = instance['img_src']
+        action['refexp'] = instance['refexp']
+        action['gt_longitude'] = instance['xlng_deg']
+        action['gt_latitude'] = instance['ylat_deg']
+        act_instances[action['actionid']] = action
 
   if len(sys.argv) == 2:
     actionid = int(sys.argv[1])
@@ -116,6 +128,8 @@ if __name__ == '__main__':
     actionid = random.choice(list(act_instances.keys()))
     print('randomly picked', actionid)
 
+  demo_list = [actionid]
+  demo_id = 0
   cam = camera.CachedPanoramicCamera(cache_root)
   cam.load_maps()
 
@@ -132,6 +146,7 @@ if __name__ == '__main__':
       cam.load_img(image_path, convert_color=False)
       cam.load_fovs()
       n_steps = len(gt_path)
+
     cam.look_fov(gt_path[fov_id])
     img = cam.get_image()
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -168,13 +183,22 @@ if __name__ == '__main__':
     column1 = np.concatenate((original, grid), axis=0)
     column2 = np.concatenate((mask, semantic), axis=0)
     combined = np.concatenate((resized_img, column1, column2), axis=1)
-    cv2.imshow("Use awsd to move c to close or quit", combined)
+    cv2.imshow(
+        "Use left/right arrows to move FoV. (n)ext (p)revious example. (c)lose", combined)
 
     key = cv2.waitKey()
-
     if key == 110:
-      print('randomly picked', actionid)
-      actionid = random.choice(list(act_instances.keys()))
+      demo_id = demo_id + 1
+      if demo_id == len(demo_list):
+        print('randomly picked', actionid)
+        actionid = random.choice(list(act_instances.keys()))
+        demo_list.append(actionid)
+      else:
+        actionid = demo_list[demo_id]
+      load_new = True
+    elif key == 112:
+      demo_id = max(demo_id - 1, 0)
+      actionid = demo_list[demo_id]
       load_new = True
     elif key == 2:
       if fov_id > 0:
