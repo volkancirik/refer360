@@ -431,7 +431,8 @@ def dump_datasets(splits, image_categories, output_file,
                   full_h=2276,
                   obj_dict_file='../data/vg_object_dictionaries.all.json',
                   degree=30,
-                  use_gt_moves=True):
+                  use_gt_moves=True,
+                  cache_root='/projects/vcirik/refer360/data/cached_data_15degrees/'):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -441,6 +442,16 @@ def dump_datasets(splits, image_categories, output_file,
     except:
       print('Cannot create folder {}'.format(task_root))
       quit(1)
+
+  if cache_root:
+    meta_file = os.path.join(cache_root, 'meta.npy')
+    meta = np.load(meta_file, allow_pickle=True)[()]
+    cached_nodes = meta['nodes']
+    cached_paths = meta['paths']
+    add_cached_path = True
+  else:
+    add_cached_path = False
+
   vg2idx = json.load(open(obj_dict_file, 'r'))['vg2idx']
 
   data_list = []
@@ -500,6 +511,42 @@ def dump_datasets(splits, image_categories, output_file,
       datum['refexps'] = sentences
       all_sentences += sent_queue
 
+      start_loc = instance['actions'][0]['act_deg_list'][0][0]
+      start_x, start_y = get_coordinates(start_loc[0], start_loc[1],
+                                         full_w=full_w,
+                                         full_h=full_h)
+      start_fov, _ = get_nearest(cached_nodes, start_x, start_y)
+      gt_path = [start_fov]
+      path = []
+      intermediate_paths = []
+
+      if add_cached_path:
+        for kk, act_list in enumerate(instance['actions'][0]['act_deg_list']):
+          act = act_list[-1]
+          lng, lat = act
+          x, y = get_coordinates(lng, lat,
+                                 full_w=full_w,
+                                 full_h=full_h)
+
+          min_n, _ = get_nearest(cached_nodes, x, y)
+          gt_path.append(min_n)
+#          if gt_path[-1] != min_n:
+
+        path = [gt_path[0]]
+        for kk in range(len(gt_path)-1):
+          start = gt_path[kk]
+          end = gt_path[kk+1]
+          intermediate_path = cached_paths[start][end]
+          path += intermediate_path[1:]
+          intermediate_paths.append(intermediate_path)
+        assert(len(gt_path) <= len(
+            path), 'len(gt_path) <= len(path) {} > {}'.format(len(gt_path), len(path)))
+        assert(len(datum['refexps']) != len(intermediate_paths),
+               'len(refepxs) != len(intermediate_paths)')
+        datum['gt_path'] = gt_path
+        datum['path'] = path
+        datum['intermediate_paths'] = intermediate_paths
+        datum['actionid'] = instance['actions'][0]['actionid']
       if task == 'continuous_grounding':
         data.append(datum)
       if task == 'graph_grounding' and task_root != '':

@@ -5,12 +5,19 @@ from PIL import Image
 import numpy as np
 import os
 from tqdm import tqdm
+from pprint import pprint
 
 
-class CachedPanoramicCamera:
-  def __init__(self, cache_root, fov=90, output_image_shape=(400, 400)):
+class CachedPanoramicCamera():
+  def __init__(self, cache_root,
+               fov=90,
+               output_image_shape=(400, 400),
+               height=2276,
+               width=4552):
     '''Init the camera.
     '''
+    super().__init__()
+    self._height, self._width = height, width
     self.fov = fov
     self.output_image_h = output_image_shape[0]
     self.output_image_w = output_image_shape[1]
@@ -30,20 +37,37 @@ class CachedPanoramicCamera:
     self.distances = meta['distances']
     self.fovs = None
     self.fov = None
+    self.masks = {}
+    self.lng_maps = {}
+    self.lat_maps = {}
 
-  def load_fovs(self):
+  def __copy__(self):
+    obj = type(self).__new__(self.__class__)
+    obj.__dict__.update(self.__dict__)
+    return obj
+
+  def set_pano(self, pano):
+    self.pano = pano
+    self._img = None
+    self.img_path = ''
+
+  def load_fovs(self,
+                verbose=False):
     '''Loads precropped fovs.
     '''
-    if self.img_path == '':
-      print('you need to load image first!')
+    if self.pano == '':
+      print('you need to load image or set pano')
       quit(0)
-    pano = self.img_path.split('/')[-1].split('.')[0]
+
     fov_prefix = os.path.join(
-        self.cache_root, 'fovs', '{}'.format(pano))
+        self.cache_root, 'fovs', '{}'.format(self.pano))
 
     self.fovs = {}
-    print('loading fovs...')
-    pbar = tqdm(self.nodes)
+    if verbose:
+      print('loading fovs...')
+      pbar = tqdm(self.nodes)
+    else:
+      pbar = self.nodes
     for n in pbar:
       node = self.nodes[n]
       idx = node['idx']
@@ -55,7 +79,23 @@ class CachedPanoramicCamera:
 
       fov = np.array(Image.open(fov_file))
       self.fovs[idx] = fov
-    print('loaded fovs for', pano)
+
+  def load_masks(self):
+    '''Loads precomputed masks.
+    '''
+    map_prefix = os.path.join(
+        self.cache_root, 'maps')
+
+    self.masks = {}
+
+    print('loading masks...')
+    pbar = tqdm(self.nodes)
+    for n in pbar:
+      node = self.nodes[n]
+      idx = node['idx']
+      mask_file = os.path.join(map_prefix, '{}.mask.jpg'.format(idx))
+      mask = np.array(Image.open(mask_file))
+      self.masks[idx] = mask
 
   def load_maps(self):
     '''Loads precomputed maps.
@@ -63,31 +103,23 @@ class CachedPanoramicCamera:
     map_prefix = os.path.join(
         self.cache_root, 'maps')
 
-    self.masks = {}
-    self.lng_maps = {}
-    self.lat_maps = {}
-
     print('loading maps...')
     pbar = tqdm(self.nodes)
     for n in pbar:
       node = self.nodes[n]
       idx = node['idx']
-      mask_file = os.path.join(map_prefix, '{}.mask.jpg'.format(idx))
-
-      mask = np.array(Image.open(mask_file))
       maps_file = os.path.join(map_prefix, '{}.map.npy'.format(idx))
       maps_data = np.load(maps_file, allow_pickle=True)[()]
       self.lng_maps[idx] = maps_data['lng_map']
       self.lat_maps[idx] = maps_data['lat_map']
-      self.masks[idx] = mask
 
   def look_fov(self, idx):
     '''Look at xlng, ylat
     '''
     self.idx = idx
-    self.xlng_map = self.lng_maps[idx]
-    self.ylat_map = self.lat_maps[idx]
-    self.mask = self.masks[idx]
+    self.xlng_map = self.lng_maps.get(idx, None)
+    self.ylat_map = self.lat_maps.get(idx, None)
+    self.mask = self.masks.get(idx, None)
     self.x = self.nodes[idx]['x']
     self.y = self.nodes[idx]['y']
     self.lng = self.nodes[idx]['lng']
@@ -95,13 +127,19 @@ class CachedPanoramicCamera:
     if self.fovs is not None:
       self.fov = self.fovs[idx]
 
+  def get_neighbors(self):
+    node = self.nodes[self.idx]
+
+    neighbors = [self.nodes[n] for n in node['neighbor2dir'].keys()]
+    return neighbors
+
   def get_current(self):
     return self.x, self.y
 
   def get_mask(self):
     return self.mask
 
-  def load_img(self, img_path, gt_loc=None, convert_color=True):
+  def load_img(self, img_path, gt_loc=None):
     '''Load image for the camera.
     '''
     self.img_path = img_path
@@ -115,6 +153,7 @@ class CachedPanoramicCamera:
                 gt_loc[0]-50: gt_loc[0]+50, 0] = 255
       self._img[gt_loc[1]-50: gt_loc[1]+50,
                 gt_loc[0]-50: gt_loc[0]+50, 1:] = 0
+    self.pano = self.img_path.split('/')[-1].split('.')[0]
 
   def look(self, xlng, ylat):
     '''Look at xlng, ylat
@@ -140,6 +179,7 @@ class CachedPanoramicCamera:
     '''
     xlng_map = (self.xlng_map / self._width) * 360.0 - 180.0  # TODO: check
     ylat_map = ((self.ylat_map / self._height) * 180.0 - 90.0) * -1.0
+
     return np.stack((xlng_map, ylat_map), axis=2)
 
   def get_pixel_map(self):
