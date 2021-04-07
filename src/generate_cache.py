@@ -225,6 +225,7 @@ def run_generate_cache():
     except:
       print('Cannot create folder {}'.format(out_root))
       quit(1)
+  print('Generating grid')
   nodes, canvas, edges, graph, paths, distances = generate_grid(degree=degree,
                                                                 full_h=full_h,
                                                                 full_w=full_w)
@@ -243,10 +244,12 @@ def run_generate_cache():
   np.save(meta_file, meta)
   cv2.imwrite(os.path.join(out_root, 'canvas.jpg'), canvas)
   image_path = os.path.join(image_root, image_list[0])
+  print('Generating maps')
   generate_maps(image_path, nodes, map_prefix, fov_size=fov_size)
 
   cam = camera(output_image_shape=(fov_size, fov_size))
   cam.load_maps(out_root)
+  print('Generating fovs')
   pbar = tqdm(image_list)
   for fname in pbar:
     image_path = os.path.join(image_root, fname)
@@ -267,6 +270,7 @@ def run_generate_cache():
                            std=[0.229, 0.224, 0.225]),
   ])
 
+  print('Generating features')
   pbar = tqdm(image_list)
   for fname in pbar:
     pano = fname.split('/')[-1].split('.')[0]
