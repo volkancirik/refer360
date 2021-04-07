@@ -520,6 +520,9 @@ def dump_datasets(splits, image_categories, output_file,
       path = []
       intermediate_paths = []
 
+      # add gt loc of waldo
+      instance['actions'][0]['act_deg_list'][-1].append([datum["gt_lng"],datum["gt_lat"]])
+
       if add_cached_path:
         for kk, act_list in enumerate(instance['actions'][0]['act_deg_list']):
           act = act_list[-1]
@@ -530,7 +533,7 @@ def dump_datasets(splits, image_categories, output_file,
 
           min_n, _ = get_nearest(cached_nodes, x, y)
           gt_path.append(min_n)
-#          if gt_path[-1] != min_n:
+
 
         path = [gt_path[0]]
         for kk in range(len(gt_path)-1):
