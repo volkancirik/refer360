@@ -1,5 +1,7 @@
 import paths
 import sys
+import argparse
+from pprint import pprint
 from utils import dump_datasets
 from utils import SPLITS
 import os
@@ -22,50 +24,44 @@ $ python dump_data.py  ../data/continuous_grounding restaurant
 $ python dump_data.py  ../data/continuous_grounding restaurant,shop,expo_showroom,living_room,bedroom
 $ python dump_data.py  ../data/continuous_grounding street,plaza_courtyard
 '''
+parser = argparse.ArgumentParser()
+parser.add_argument("--task", choices=['continuous_grounding',
+                                       'graph_grounding',
+                                       'fov_pretraining',
+                                       'grid_fov_pretraining'],
+                    default='continuous_grounding',
+                    help='task name, default: continuous_grounding')
+parser.add_argument('--dump_root', type=str, required=True, help='Dump folder path')
+parser.add_argument("--images",
+                    type=str,
+                    default='all',
+                    help='list of image categories comma separated or all')
+parser.add_argument('--task_root', type=str,  default='', help='FoVs path for <task>, default=""')
+parser.add_argument('--graph_root', type=str,  default='', help='object detections folder for panoramas, default=""')
+parser.add_argument('--obj_dict_file',
+                    type=str,
+                    default='../data/vg_object_dictionaries.all.json',
+                    help='object dictionaries, default=../data/vg_object_dictionaries.all.json')
+parser.add_argument('--cache_root',
+                    type=str,
+                    default='../data/cached_data_15degrees/',
+                    help='cache root, default=../data/cached_data_15degrees/')
+args = parser.parse_args()
 
-if len(sys.argv) < 2 or len(sys.argv) > 7:
-  print(usage)
-  quit(1)
-task = 'continuous_grounding'
-task_root = ''
-graph_root = ''
-obj_dict_file = '../data/vg_object_dictionaries.all.json'
-
-dump_root = sys.argv[1]
-images = sys.argv[2]
-
-if len(sys.argv) > 4:
-  task = sys.argv[3]
-if len(sys.argv) == 5:
-  task_root = sys.argv[4]
-if 6 <= len(sys.argv) <= 7:
-  task_root = sys.argv[4]
-  if 'fov_pretraining' in task:
-    graph_root = sys.argv[5]
-    if len(sys.argv) == 7:
-      obj_dict_file = sys.argv[6]
-  else:
-    print(usage)
-    quit(1)
-
-if dump_root != '' and not os.path.exists(dump_root):
+if args.dump_root != '' and not os.path.exists(args.dump_root):
   try:
-    os.makedirs(dump_root)
+    os.makedirs(args.dump_root)
   except:
-    print('Cannot create folder {}'.format(dump_root))
+    print('Cannot create folder {}'.format(args.dump_root))
     quit(1)
 
-print('images', images)
-print('task', task)
-print('task_root', task_root)
-print('graph_root', graph_root)
-print('obj_dict_file', obj_dict_file)
-
+pprint(args)
 for ii, split_name in enumerate(SPLITS):
   dump_name = os.path.join(
-      dump_root, '{}.[{}].imdb.npy'.format(split_name, images))
-  dump_datasets([split_name], images, dump_name,
-                task=task,
-                task_root=task_root,
-                graph_root=graph_root,
-                obj_dict_file=obj_dict_file)
+      args.dump_root, '{}.[{}].imdb.npy'.format(split_name, args.images))
+  dump_datasets([split_name], args.images, dump_name,
+                task=args.task,
+                task_root=args.task_root,
+                graph_root=args.graph_root,
+                obj_dict_file=args.obj_dict_file,
+                cache_root=args.cache_root)
