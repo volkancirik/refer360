@@ -31,13 +31,16 @@ parser.add_argument("--task", choices=['continuous_grounding',
                                        'grid_fov_pretraining'],
                     default='continuous_grounding',
                     help='task name, default: continuous_grounding')
-parser.add_argument('--dump_root', type=str, required=True, help='Dump folder path')
+parser.add_argument('--dump_root', type=str,
+                    required=True, help='Dump folder path')
 parser.add_argument("--images",
                     type=str,
                     default='all',
                     help='list of image categories comma separated or all')
-parser.add_argument('--task_root', type=str,  default='', help='FoVs path for <task>, default=""')
-parser.add_argument('--graph_root', type=str,  default='', help='object detections folder for panoramas, default=""')
+parser.add_argument('--task_root', type=str,  default='',
+                    help='FoVs path for <task>, default=""')
+parser.add_argument('--graph_root', type=str,  default='',
+                    help='object detections folder for panoramas, default=""')
 parser.add_argument('--obj_dict_file',
                     type=str,
                     default='../data/vg_object_dictionaries.all.json',
