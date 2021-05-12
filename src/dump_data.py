@@ -51,6 +51,9 @@ parser.add_argument('--cache_root',
                     type=str,
                     default='../data/cached_data_15degrees/',
                     help='cache root, default=../data/cached_data_15degrees/')
+parser.add_argument('--degree', type=int,  default=15,
+                    help='degrees between fovs, default="15')
+
 args = parser.parse_args()
 
 if args.dump_root != '' and not os.path.exists(args.dump_root):
@@ -69,4 +72,5 @@ for ii, split_name in enumerate(SPLITS):
                 task_root=args.task_root,
                 graph_root=args.graph_root,
                 obj_dict_file=args.obj_dict_file,
-                cache_root=args.cache_root)
+                cache_root=args.cache_root,
+                degree=args.degree)
