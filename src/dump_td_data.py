@@ -21,7 +21,7 @@ parser.add_argument('--obj_dict_file',
 parser.add_argument('--cache_root',
                     type=str,
                     default='../data/cached_td_data30degrees/',
-                    help='cache root, default=../data/cached_td_data30degrees/')
+                    help='cache root, default=../data/td_cached_data_30degrees/')
 args = parser.parse_args()
 
 if args.dump_root != '' and not os.path.exists(args.dump_root):
