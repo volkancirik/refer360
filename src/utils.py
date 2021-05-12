@@ -31,6 +31,7 @@ SPLITS = [
 ]
 # dict direction types -> list of directions
 DIRECTIONS = {
+    'navigation': ['ul', 'u', 'ur', 'l', 'r', 'dl', 'd', 'dr'],
     'canonical': ['up', 'down', 'left', 'right'],
     'cartesian': ['vertical', 'horizontal'],
     'lup': ['lateral', 'up', 'down'],
@@ -69,25 +70,65 @@ def get_coordinates(xlng, ylat,
   return x, y
 
 
-def get_object_dictionaries(obj_dict_file):
+def get_object_dictionaries(obj_dict_file,
+                            return_all=False):
   '''Loads object object dictionaries
   visual genome -> idx2
   idx ->  visual genome
   idx -> object classes'''
 
+  print('loading object dictionaries from:', obj_dict_file)
   data = json.load(
       open(obj_dict_file, 'r'))
   vg2idx = data['vg2idx']
   idx2vg = data['idx2vg']
   obj_classes = data['obj_classes']
 
+  if return_all:
+
+    vg2idx = {int(k): int(vg2idx[k]) for k in vg2idx}
+    idx2vg = {int(k): int(idx2vg[k]) for k in idx2vg}
+    obj_classes.append('</s>')
+    vg2idx[1601] = len(obj_classes)-1
+    idx2vg[len(obj_classes)-1] = 1601
+
+    name2vg, name2idx, vg2name = {}, {}, {}
+    for idx in idx2vg:
+      vg_idx = idx2vg[idx]
+      obj_name = obj_classes[idx]
+
+      name2vg[obj_name] = vg_idx
+      name2idx[obj_name] = idx
+      vg2name[vg_idx] = obj_name
+
+    return vg2idx, idx2vg, obj_classes, name2vg, name2idx, vg2name
   return vg2idx, idx2vg, obj_classes
+
+
+def objlist2regions(obj_list, n_objects,
+                    dir_methods=[]):
+
+  if dir_methods == []:
+    dir_methods = DIRECTIONS.keys()
+
+  all_regions = {}
+  for dir_method in dir_methods:
+    directions = DIRECTIONS[dir_method]
+    regions = {d: np.zeros((n_objects, )) for d in directions}
+    all_regions[dir_method] = regions
+
+  for dir_method in dir_methods:
+    for direction in obj_list[dir_method]:
+      for obj in obj_list[dir_method][direction]:
+        all_regions[dir_method][direction][obj] = 1.0
+  return all_regions
 
 
 def get_objects(move_x, move_y, nodes, vg2idx,
                 full_w=4552,
                 full_h=2276,
-                fov_size=400):
+                fov_size=400,
+                include_vectors=True):
   '''Given x,y and list of object returns dictionary for diffferent direction methods and a list of objects
   '''
 
@@ -122,9 +163,28 @@ def get_objects(move_x, move_y, nodes, vg2idx,
     else:
       d_up = move_y - y
       d_down = full_h
+
+    directions = []
+    if fov_size/2 <= d_up <= fov_size*1.5:
+      directions.append('u')
+    elif fov_size/2 <= d_down <= fov_size*1.5:
+      directions.append('d')
+    if fov_size/2 <= d_left <= fov_size*1.5:
+      if directions:
+        directions[0] += 'l'
+      directions.append('l')
+    elif fov_size/2 <= d_right <= fov_size*1.5:
+      if directions:
+        directions[0] += 'r'
+      directions.append('r')
+    if vg_obj_id in vg2idx:
+      for d in directions:
+        obj_id = vg2idx[vg_obj_id]
+        all_regions['navigation'][d][obj_id] = 1
+        all_obj_list['navigation'][d].append(obj_id)
+
     for d, dist in zip(DIRECTIONS['canonical'], [d_up, d_down, d_left, d_right]):
       if fov_size/2 <= dist <= fov_size*1.5 and vg_obj_id in vg2idx:
-
         obj_id = vg2idx[vg_obj_id]
         all_regions['canonical'][d][obj_id] = 1
         all_obj_list['canonical'][d].append(obj_id)
@@ -148,7 +208,10 @@ def get_objects(move_x, move_y, nodes, vg2idx,
         all_regions['canonical_proximity'][d][obj_id] = 1
         all_obj_list['canonical_proximity'][d].append(obj_id)
 
-  return all_regions, all_obj_list
+  if include_vectors:
+    return all_regions, all_obj_list
+  else:
+    return {}, all_obj_list
 
 
 def rad2degree(xlng, ylat,
@@ -521,7 +584,8 @@ def dump_datasets(splits, image_categories, output_file,
       intermediate_paths = []
 
       # add gt loc of waldo
-      instance['actions'][0]['act_deg_list'][-1].append([datum["gt_lng"],datum["gt_lat"]])
+      instance['actions'][0]['act_deg_list'][-1].append(
+          [datum["gt_lng"], datum["gt_lat"]])
 
       if add_cached_path:
         for kk, act_list in enumerate(instance['actions'][0]['act_deg_list']):
@@ -533,7 +597,6 @@ def dump_datasets(splits, image_categories, output_file,
 
           min_n, _ = get_nearest(cached_nodes, x, y)
           gt_path.append(min_n)
-
 
         path = [gt_path[0]]
         for kk in range(len(gt_path)-1):
@@ -618,7 +681,6 @@ def dump_datasets(splits, image_categories, output_file,
 
         for n in grid_nodes:
           node = grid_nodes[n]
-
           mdatum = {}
           fov_id = node['id']
           mdatum['fov_id'] = fov_id
@@ -691,6 +753,44 @@ def dump_datasets(splits, image_categories, output_file,
 
           if any(directions):
             data.append(mdatum)
+      elif task == 'cached_fov_pretraining':
+        node_path = os.path.join(graph_root, 'pano_{}.npy'.format(pano))
+        node_img = os.path.join(graph_root, 'pano_{}.jpg'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+
+        for n in cached_nodes:
+          node = cached_nodes[n]
+          mdatum = {}
+          fov_id = node['idx']
+          mdatum['fov_id'] = fov_id
+
+          mdatum['move_max'] = len(sentences)
+          mdatum['img_src'] = datum['img_src']
+          # mdatum['actionid'] = move_id
+          mdatum['annotationid'] = instance['annotationid']
+
+          ylat, xlng = node['lat'], node['lng']
+          mx, my = node['x'], node['y']
+          mdatum['xlongitude'] = xlng
+          mdatum['ylatitude'] = ylat
+          mdatum['x'] = mx
+          mdatum['y'] = my
+
+          mdatum['refexps'] = sentences
+          fov_file = os.path.join(cache_root, 'fovs',
+                                  task_root, 'pano_{}.{}.jpg'.format(pano, fov_id))
+
+          mdatum['fov_file'] = fov_file
+          regions, obj_list = get_objects(mx, my, nodes, vg2idx,
+                                          include_vectors=False)
+          mdatum['regions'] = regions
+          mdatum['obj_list'] = obj_list
+
+          directions = [len(obj_list['navigation'][d])
+                        for d in obj_list['navigation'].keys()]
+
+          if sum(directions) > 0:
+            data.append(mdatum)
     data_list.append(data)
     print('{} instances have errors'.format(count_err))
     pbar.close()
@@ -702,6 +802,7 @@ def dump_datasets(splits, image_categories, output_file,
 
   n_instances = sum([len(l) for l in data_list])
   print('Dumping {} instances to {}'.format(n_instances, output_file))
+
   np.save(open(output_file, 'wb'), {'data_list': data_list,
                                     'sentences': all_sentences})
 #  return data_list, all_sentences
