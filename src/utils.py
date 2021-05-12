@@ -105,6 +105,17 @@ def get_object_dictionaries(obj_dict_file,
   return vg2idx, idx2vg, obj_classes
 
 
+def coordinate2degrees(x, y,
+                       full_w=4552,
+                       full_h=2276):
+  '''given x,y coordinates returrns lng lat degrees
+  '''
+  xlng = ((x / full_w) - 0.5) * 360.
+  ylat = ((y / full_h) - 0.5) * 90
+
+  return xlng, ylat
+
+
 def objlist2regions(obj_list, n_objects,
                     dir_methods=[]):
 
@@ -495,7 +506,7 @@ def dump_datasets(splits, image_categories, output_file,
                   obj_dict_file='../data/vg_object_dictionaries.all.json',
                   degree=30,
                   use_gt_moves=True,
-                  cache_root='/projects/vcirik/refer360/data/cached_data_15degrees/'):
+                  cache_root='../data/cached_data_30degrees/'):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -891,7 +902,7 @@ def dump_mp3d_datasets(splits, output_file,
                                     'sentences': []})
 
 
-def visualize_path(path, node_dict, edges, canvas, size=20):
+def visualize_path(path, node_dict, edges, canvas, size=20, path_color=color_green):
 
   n_start = node_dict[path[0]]
 
@@ -921,31 +932,31 @@ def visualize_path(path, node_dict, edges, canvas, size=20):
           cv2.line(canvas,
                    (sx, sy),
                    (4552, ey),
-                   (255, 255, 0), 8, 8)
+                   path_color, 8, 8)
         cv2.line(canvas,
                  (0, sy),
                  (ex % 4552, ey),
-                 (255, 255, 0), 8, 8)
+                 path_color, 8, 8)
       elif sx <= 72 and 4552 <= ex:
         if sx > 0:
           cv2.line(canvas,
                    (sx, sy),
                    (0, ey),
-                   (255, 255, 0), 8, 8)
+                   path_color, 8, 8)
         cv2.line(canvas,
                  (4552, sy),
                  (4552 - ex % 4552, ey),
-                 (255, 255, 0), 8, 8)
+                 path_color, 8, 8)
       elif 4552 < sx:
         cv2.line(canvas,
                  (sx - 4552, sy),
                  (0, ey),
-                 (255, 255, 0), 8, 8)
+                 path_color, 8, 8)
       else:
         cv2.line(canvas,
                  (sx, sy),
                  (ex, ey),
-                 (255, 255, 0), 8, 8)
+                 path_color, 8, 8)
     prev_node = n
 
   n_end = node_dict[path[-1]]
@@ -953,7 +964,7 @@ def visualize_path(path, node_dict, edges, canvas, size=20):
   ox, oy = n_end['x'], n_end['y']
   add_square(canvas, ox, oy,
              size=size,
-             color=color_blue)
+             color=color_red)
   return canvas
 
 
@@ -992,3 +1003,7 @@ def add_overlay(src, trg, coor,
         if pixel != ignore:
           src[ys, xs, :] = trg[yt, xt, :]
   return src
+
+
+if __name__ == '__main__':
+  dump_datasets(['train', 'dev', 'test'], 'all', 'dummy')
