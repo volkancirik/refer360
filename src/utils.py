@@ -112,7 +112,6 @@ def coordinate2degrees(x, y,
   '''
   xlng = ((x / full_w) - 0.5) * 360.
   ylat = ((y / full_h) - 0.5) * 90
-
   return xlng, ylat
 
 
@@ -554,8 +553,11 @@ def dump_datasets(splits, image_categories, output_file,
       xlongitude, ylatitude = instance['xlng_deg'], instance['ylat_deg'],
 
       datum['annotationid'] = instance['annotationid']
-      datum["gt_lng"] = xlongitude
-      datum["gt_lat"] = ylatitude
+      gt_x, gt_y = get_coordinates(xlongitude, ylatitude)
+      datum['gt_lng'] = xlongitude
+      datum['gt_lat'] = ylatitude
+      datum['gt_x'] = gt_x
+      datum['gt_y'] = gt_y
 
       img_cat = instance['img_cat']
       img_loc = instance['img_loc']

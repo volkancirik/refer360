@@ -188,8 +188,9 @@ def dump_td_datasets(splits, output_file,
           td_instance['main_pano'] + '.jpg'
       instance['annotationid'] = td_instance['route_id']
       center = json.loads(td_instance['main_static_center'])
-      gt_coors = [int(center['y']*full_h), int(center['x']*full_w)]
-      xlng_deg, ylat_deg = coordinate2degrees(gt_coors[1], gt_coors[0],
+      gt_x, gt_y = int(center['x']*full_w), int(center['y']*full_h)
+
+      xlng_deg, ylat_deg = coordinate2degrees(gt_x, gt_y,
                                               full_w=full_w,
                                               full_h=full_h)
       instance['xlng_deg'], instance['ylat_deg'] = xlng_deg, ylat_deg
@@ -208,8 +209,10 @@ def dump_td_datasets(splits, output_file,
       xlongitude, ylatitude = instance['xlng_deg'], instance['ylat_deg']
 
       datum['annotationid'] = instance['annotationid']
-      datum["gt_lng"] = xlongitude
-      datum["gt_lat"] = ylatitude
+      datum['gt_lng'] = xlongitude
+      datum['gt_lat'] = ylatitude
+      datum['gt_x'] = gt_x
+      datum['gt_y'] = gt_y
 
       img_cat = instance['img_cat']
       img_loc = instance['img_loc']
@@ -278,4 +281,9 @@ def dump_td_datasets(splits, output_file,
 
 
 if __name__ == '__main__':
-  dump_td_datasets(['train', 'dev', 'test'], 'dummy')
+  #dump_td_datasets(['train', 'dev', 'test'], 'dummy')
+  print(coordinate2degrees(2189, 890, full_w=3000, full_h=1500))
+  print(coordinate2degrees(3000, 890, full_w=3000, full_h=1500))
+  print(coordinate2degrees(1500, 890, full_w=3000, full_h=1500))
+  print(coordinate2degrees(0, 890, full_w=3000, full_h=1500))
+  print(coordinate2degrees(748, 797, full_w=3000, full_h=1500))
