@@ -158,8 +158,8 @@ def build_fov_embedding(latitude, longitude):
   [cos(longitude) for _ in range(1, 33)]
   """
   quarter = int(FOV_EMB_SIZE / 4)
-  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).to(DEVICE)
 
+  embedding = torch.zeros(latitude.size(0), FOV_EMB_SIZE).to(DEVICE)
   embedding[:,  0:quarter*1] = torch.sin(latitude)
   embedding[:, quarter*1:quarter*2] = torch.cos(latitude)
   embedding[:, quarter*2:quarter*3] = torch.sin(longitude)

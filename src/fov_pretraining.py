@@ -1,15 +1,73 @@
+import paths
 from collections import defaultdict
 from torch.utils.data import Dataset
 from utils import DIRECTIONS, CAT2LOC
 from utils import get_object_dictionaries
-from model_utils import load_obj_tsv
+from utils import objlist2regions
+
 from operator import itemgetter
 import numpy as np
 import os
 import torch
 import random
 from tqdm import tqdm
+from pprint import pprint
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
+def dump_stats(out_file, data_root, split,
+               images='all',
+               obj_dict_file='../data/vg_object_dictionaries.all.json',
+               nfovs=60):
+
+  vg2idx, idx2vg, obj_classes, name2vg, name2idx, vg2name = get_object_dictionaries(
+      obj_dict_file, return_all=True)
+  n_objects = len(vg2name)
+
+  split_file = os.path.join(
+      data_root, '{}.[{}].imdb.npy'.format(split, images))
+  print('loading split {} from {} for FoV pretraining'.format(split, split_file))
+  instances = np.load(split_file, allow_pickle=True)[()]['data_list'][0]
+
+  all_regions = {}
+  for dir_method in DIRECTIONS:
+    directions = DIRECTIONS[dir_method]
+    regions = {d: np.zeros((n_objects, )) for d in directions}
+    all_regions[dir_method] = regions
+
+  fov2regions = {}
+  for fov in range(nfovs):
+    fov2regions[fov] = all_regions.copy()
+
+  pbar = tqdm(instances)
+  for instance in pbar:
+    obj_list = instance['obj_list']
+
+    for dir_method in obj_list:
+      for direction in obj_list[dir_method]:
+        for obj in list(set(obj_list[dir_method][direction])):
+          all_regions[dir_method][direction][obj] += 1.0
+          fov2regions[instance['fov_id']][dir_method][direction][obj] += 1.0
+
+  # normalize counts
+  for dir_method in all_regions:
+    for direction in all_regions[dir_method]:
+      sum_count = np.sum(all_regions[dir_method][direction])
+      if sum_count > 0:
+        all_regions[dir_method][direction][:] = all_regions[dir_method][direction][:] / sum_count
+      else:
+        all_regions[dir_method][direction][:] = 1.0 / n_objects
+
+      for fov_id in fov2regions.keys():
+        sum_count = np.sum(fov2regions[fov_id][dir_method][direction])
+        if sum_count > 0:
+          fov2regions[fov_id][dir_method][direction][:
+                                                     ] = fov2regions[fov_id][dir_method][direction][:] / sum_count
+        else:
+          fov2regions[fov_id][dir_method][direction][:] = 1.0 / n_objects
+
+  np.save(out_file, {'all_regions': all_regions,
+                     'fov2regions': fov2regions})
 
 
 def load_fovpretraining_splits(splits,
@@ -19,7 +77,8 @@ def load_fovpretraining_splits(splits,
                                task='task1',
                                obj_classes=[],
                                ignore_list='',
-                               use_meta=False):
+                               use_meta=False,
+                               load_regions=False):
 
   fov_files = []
   regions = []
@@ -31,10 +90,12 @@ def load_fovpretraining_splits(splits,
 
   labels = {}
   pano_metas = []
+  n_objects = len(obj_classes)
 
   ignore_list = ['move'+ignore
                  for ignore in ignore_list.split(',')] if ignore_list else []
   print('Following moves will be ignored: {}'.format(' , '.join(ignore_list)))
+  print('# of objects', n_objects)
 
   for split in splits:
     split_file = os.path.join(
@@ -44,6 +105,9 @@ def load_fovpretraining_splits(splits,
 
     pbar = tqdm(instances)
     for instance in pbar:
+      if 'img_src' in instance:
+        instance['pano'] = instance['img_src']
+
       ignored = [ignore in instance['fov_file'] for ignore in ignore_list]
 
       if any(ignored):
@@ -61,20 +125,27 @@ def load_fovpretraining_splits(splits,
         pano_loc = 'n/a'
 
       pano_metas += [(pano_id, pano_category, pano_loc)]
-      fovs += [(instance['latitude'], instance['longitude'])]
+      fovs += [(instance['ylatitude'], instance['xlongitude'])]
       try:
         refexps += [instance['refexp']]
       except:
         refexps += [instance['refexps']]
         pass
 
-      regions += [instance['regions']]
-      obj_lists += [instance['obj_list']]
+      if load_regions:
+        regs = objlist2regions(instance['obj_list'], n_objects,
+                               dir_methods=[direction])
+        obj_list = {direction: instance['obj_list'][direction]}
+      else:
+        regs = instance['regions']
+        obj_list = instance['obj_list']
+      regions += [regs]
+      obj_lists += [obj_list]
 
       obj_query = []
       obj_direction = []
       for dir_id, dir in enumerate(DIRECTIONS[direction]):
-        for obj in instance['obj_list'][direction][dir]:
+        for obj in set(instance['obj_list'][direction][dir]):
           obj_query += [obj]
           obj_direction += [dir_id]
 
@@ -98,6 +169,8 @@ def load_fovpretraining_splits(splits,
   if 'train' in splits:
     print('_'*20)
     for o, _ in enumerate(obj_classes):
+      if o not in labels:
+        continue
       sorted_counts = sorted(labels[o].items(), key=itemgetter(1))[::-1]
       total = sum([cnt for _, cnt in sorted_counts])
       print('object:', obj_classes[o], 'total count:', int(total))
@@ -118,9 +191,12 @@ class FoVPretrainingDataset(Dataset):
                task='task1',
                obj_dict_file='../data/vg_object_dictionaries.json',
                use_objects=False,
-               ignore_list=''):
+               ignore_list='',
+               load_regions=True):
 
-    vg2idx, idx2vg, obj_classes = get_object_dictionaries(obj_dict_file)
+    vg2idx, idx2vg, obj_classes, name2vg, name2idx, vg2name = get_object_dictionaries(
+        obj_dict_file, return_all=True)
+
     self.vg2idx = vg2idx
     self.idx2vg = idx2vg
     self.obj_classes = obj_classes
@@ -130,7 +206,8 @@ class FoVPretrainingDataset(Dataset):
                                                                                                                                           images=images,
                                                                                                                                           task=task,
                                                                                                                                           obj_classes=obj_classes,
-                                                                                                                                          ignore_list=ignore_list)
+                                                                                                                                          ignore_list=ignore_list,
+                                                                                                                                          load_regions=load_regions)
 
     self.ignore_list = ignore_list
     self.direction = direction
@@ -149,6 +226,7 @@ class FoVPretrainingDataset(Dataset):
 
     self.pano2idx = {p[0]: idx for idx, p in enumerate(pano_metas)}
     if self.use_objects:
+      from model_utils import load_obj_tsv
       butd_feats = '/projects2/lxmert/data/refer360_fovpretraining_imgfeat/all_obj36.tsv'
       img_data = []
       img_data.extend(load_obj_tsv(butd_feats,
@@ -175,14 +253,16 @@ class FoVTask1(FoVPretrainingDataset):
                images='all',
                obj_dict_file='../data/vg_object_dictionaries.json',
                use_objects=False,
-               ignore_list=''):
+               ignore_list='',
+               load_regions=True):
     super(FoVTask1, self).__init__(splits, direction,
                                    data_root=data_root,
                                    images=images,
                                    task='task1',
                                    obj_dict_file=obj_dict_file,
                                    use_objects=use_objects,
-                                   ignore_list=ignore_list)
+                                   ignore_list=ignore_list,
+                                   load_regions=True)
 
   def __getitem__(self, index):
 
@@ -346,7 +426,6 @@ class FoVTask3(FoVPretrainingDataset):
     most_freq_label = torch.LongTensor([most_freq]).to(DEVICE)
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
-
     diff_set = list(set([int(key) for key in self.idx2vg.keys()]
                         ).difference(self.fov2obj[fov_file]))
     if random.randint(0, 1) == 1 and len(diff_set) > 0:
@@ -391,11 +470,11 @@ class FoVTask4(FoVTask3):
   def __getitem__(self, index):
 
     obj_queries = self.obj_queries[index]
-    #obj_directions = self.obj_directions[index]
+    # obj_directions = self.obj_directions[index]
 
     obj_index = random.randint(0, len(obj_queries)-1)
     obj_query = obj_queries[obj_index]
-    #obj_direction = obj_directions[obj_index]
+    # obj_direction = obj_directions[obj_index]
     most_freq = self.most_freq[obj_query]
 
     pano_id, pano_category, pano_loc = self.pano_metas[index]
@@ -440,3 +519,21 @@ class FoVTask4(FoVTask3):
 
   def __len__(self):
     return len(self.pano_metas)
+
+
+if __name__ == '__main__':
+  import math
+  degrees = [60, 45, 30, 15]
+  for degree in degrees:
+    nfovs = int((360 / degree)*math.ceil(150/degree))
+    dump_stats('cached{}degrees_stats.npy'.format(degree),
+               '../data/fov_pretraining_cached{}degrees'.format(
+        degree), 'train',
+        nfovs=nfovs)
+
+  # dump_stats('cached45degrees_stats.npy',
+  #            '../data/fov_pretraining_cached45degrees', 'train')
+  # dump_stats('cached30degrees_stats.npy',
+  #            '../data/fov_pretraining_cached30degrees', 'train')
+  # dump_stats('cached15degrees_stats.npy',
+  #            '../data/fov_pretraining_cached15degrees', 'train')

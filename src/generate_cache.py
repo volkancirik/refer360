@@ -244,8 +244,11 @@ def run_generate_cache():
   np.save(meta_file, meta)
   cv2.imwrite(os.path.join(out_root, 'canvas.jpg'), canvas)
   image_path = os.path.join(image_root, image_list[0])
-  print('Generating maps')
-  generate_maps(image_path, nodes, map_prefix, fov_size=fov_size)
+  # print('Generating maps')
+  # generate_maps(image_path, nodes, map_prefix,
+  #               fov_size=fov_size,
+  #               full_h=full_h,
+  #               full_w=full_w)
 
   cam = camera(output_image_shape=(fov_size, fov_size))
   cam.load_maps(out_root)
@@ -259,26 +262,26 @@ def run_generate_cache():
     dump_fovs(cam, image_path, out_root, nodes, fov_prefix,
               fov_size=fov_size)
 
-  resnetmodel = models.resnet152(pretrained=True).to(DEVICE)
-  model = torch.nn.Sequential(
-      *(list(resnetmodel.children())[:-1])).to(DEVICE)
-  for p in model.parameters():
-    model.requires_grad = False
-  preprocess = transforms.Compose([
-      transforms.ToTensor(),
-      transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                           std=[0.229, 0.224, 0.225]),
-  ])
+  # resnetmodel = models.resnet152(pretrained=True).to(DEVICE)
+  # model = torch.nn.Sequential(
+  #     *(list(resnetmodel.children())[:-1])).to(DEVICE)
+  # for p in model.parameters():
+  #   model.requires_grad = False
+  # preprocess = transforms.Compose([
+  #     transforms.ToTensor(),
+  #     transforms.Normalize(mean=[0.485, 0.456, 0.406],
+  #                          std=[0.229, 0.224, 0.225]),
+  # ])
 
-  print('Generating features')
-  pbar = tqdm(image_list)
-  for fname in pbar:
-    pano = fname.split('/')[-1].split('.')[0]
-    features_prefix = os.path.join(
-        out_root, 'features', '{}'.format(pano))
-    fov_prefix = os.path.join(
-        out_root, 'fovs', '{}'.format(pano))
-    dump_features(model, preprocess, nodes, features_prefix, fov_prefix)
+  # print('Generating features')
+  # pbar = tqdm(image_list)
+  # for fname in pbar:
+  #   pano = fname.split('/')[-1].split('.')[0]
+  #   features_prefix = os.path.join(
+  #       out_root, 'features', '{}'.format(pano))
+  #   fov_prefix = os.path.join(
+  #       out_root, 'fovs', '{}'.format(pano))
+  #   dump_features(model, preprocess, nodes, features_prefix, fov_prefix)
 
 
 if __name__ == '__main__':
