@@ -505,7 +505,8 @@ def dump_datasets(splits, image_categories, output_file,
                   obj_dict_file='../data/vg_object_dictionaries.all.json',
                   degree=30,
                   use_gt_moves=True,
-                  cache_root='../data/cached_data_30degrees/'):
+                  cache_root='../data/cached_data_30degrees/',
+                  data_root='../data'):
   '''Prepares and dumps dataset to an npy file.
   '''
 
@@ -541,7 +542,8 @@ def dump_datasets(splits, image_categories, output_file,
   stats = defaultdict(int)
   for split in splits:
     data = []
-    instances = json.load(open('../data/{}.json'.format(split), 'r'))
+    instances = json.load(
+        open(os.path.join(data_root, '{}.json'.format(split)), 'r'))
 
     pbar = tqdm(instances)
     count_err = 0

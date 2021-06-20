@@ -14,6 +14,7 @@ from pprint import pprint
 from utils import get_coordinates
 from utils import get_nearest
 from utils import coordinate2degrees
+from utils import get_objects
 # list of dataset splits
 SPLITS = [
     'dev',
@@ -163,6 +164,8 @@ def dump_td_datasets(splits, output_file,
   else:
     raise NotImplementedError()
 
+  vg2idx = json.load(open(obj_dict_file, 'r'))['vg2idx']
+
   data_list = []
 
   all_sentences = []
@@ -270,6 +273,47 @@ def dump_td_datasets(splits, output_file,
         datum['actions'] = instance['actions']
       if task == 'continuous_grounding':
         data.append(datum)
+      elif task == 'cached_fov_pretraining':
+        pano = instance['img_idx']
+        node_path = os.path.join(graph_root, '{}.npy'.format(pano))
+        nodes = np.load(node_path, allow_pickle=True)[()]
+
+        for n in cached_nodes:
+          node = cached_nodes[n]
+          mdatum = {}
+          fov_id = node['idx']
+          mdatum['fov_id'] = fov_id
+
+          mdatum['move_max'] = len(sentences)
+          mdatum['img_src'] = datum['img_src']
+          # mdatum['actionid'] = move_id
+          mdatum['annotationid'] = instance['annotationid']
+
+          ylat, xlng = node['lat'], node['lng']
+          mx, my = node['x'], node['y']
+          mdatum['xlongitude'] = xlng
+          mdatum['ylatitude'] = ylat
+          mdatum['x'] = mx
+          mdatum['y'] = my
+
+          mdatum['refexps'] = sentences
+          fov_file = os.path.join(cache_root, 'fovs',
+                                  task_root, 'pano_{}.{}.jpg'.format(pano, fov_id))
+
+          mdatum['fov_file'] = fov_file
+          regions, obj_list = get_objects(mx, my, nodes, vg2idx,
+                                          full_w=full_w,
+                                          full_h=full_h,
+                                          include_vectors=False)
+          mdatum['regions'] = regions
+          mdatum['obj_list'] = obj_list
+
+          directions = [len(obj_list['navigation'][d])
+                        for d in obj_list['navigation'].keys()]
+
+          if sum(directions) > 0:
+            data.append(mdatum)
+
     data_list.append(data)
     print('{} instances have errors'.format(count_err))
     pbar.close()

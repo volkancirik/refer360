@@ -5,7 +5,8 @@ from utils_td import dump_td_datasets, SPLITS
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", choices=['continuous_grounding', ],
+parser.add_argument("--task", choices=['continuous_grounding',
+                                       'cached_fov_pretraining'],
                     default='continuous_grounding',
                     help='task name, default: continuous_grounding')
 parser.add_argument('--dump_root', type=str,

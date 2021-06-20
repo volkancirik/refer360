@@ -53,6 +53,10 @@ parser.add_argument('--cache_root',
                     help='cache root, default=../data/cached_data_15degrees/')
 parser.add_argument('--degree', type=int,  default=15,
                     help='degrees between fovs, default="15')
+parser.add_argument('--data_root',
+                    type=str,
+                    default='../data/',
+                    help='data root, default=../data/')
 
 args = parser.parse_args()
 
@@ -73,4 +77,5 @@ for ii, split_name in enumerate(SPLITS):
                 graph_root=args.graph_root,
                 obj_dict_file=args.obj_dict_file,
                 cache_root=args.cache_root,
-                degree=args.degree)
+                degree=args.degree,
+                data_root=args.data_root)

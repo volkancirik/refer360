@@ -246,6 +246,11 @@ def eval_epoch(data_iterator, model, optimizer, args,
         split_name, 'batch_loss'), total_loss[-1], n_iter)
 
     n_iter += 1
+    if (n_iter+1) % 100 == 0 and update:
+      model_name = os.path.join(
+          args.exp_dir, args.prefix + '/model.{}_{}.pt'.format(epoch, n_iter))
+      print('\n saving model', model_name)
+      torch.save(model, model_name)
 
   if verbose:
     pbar.close()
@@ -397,10 +402,11 @@ def main():
                                               log_path=log_path)
       tot_val_unseen_iter = n_iter
       if val_seen_metrics[args.metric] > best_val:
-        print('\n UPDATING MODELS! \n')
+        model_name = os.path.join(
+            args.exp_dir, args.prefix + '/model.best.pt')
+        print('\n UPDATING BEST MODEL! {}\n'.format(model_name))
         best_val = val_seen_metrics[args.metric]
-        torch.save(model, os.path.join(
-            args.exp_dir, args.prefix + '/model.pt'))
+        torch.save(model, model_name)
 
 
 if __name__ == '__main__':

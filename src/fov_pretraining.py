@@ -523,17 +523,15 @@ class FoVTask4(FoVTask3):
 
 if __name__ == '__main__':
   import math
-  degrees = [60, 45, 30, 15]
+  degrees = [60, 45, 30]  # , 15]
+  prefix = 'td'  # 'r360tiny'  # 'refer360'
+  root = '../data/td_data/'  # '../data/r360tiny_data/'  # '../data/'
   for degree in degrees:
     nfovs = int((360 / degree)*math.ceil(150/degree))
-    dump_stats('cached{}degrees_stats.npy'.format(degree),
-               '../data/fov_pretraining_cached{}degrees'.format(
-        degree), 'train',
-        nfovs=nfovs)
-
-  # dump_stats('cached45degrees_stats.npy',
-  #            '../data/fov_pretraining_cached45degrees', 'train')
-  # dump_stats('cached30degrees_stats.npy',
-  #            '../data/fov_pretraining_cached30degrees', 'train')
-  # dump_stats('cached15degrees_stats.npy',
-  #            '../data/fov_pretraining_cached15degrees', 'train')
+    path = os.path.join(root, 'fov_pretraining_cached{}degrees'.format(
+        degree))
+    dump_file = '{}_cached{}degrees_stats.npy'.format(prefix, degree)
+    print('dumping to', dump_file)
+    dump_stats(dump_file,
+               path, 'train',
+               nfovs=nfovs)
