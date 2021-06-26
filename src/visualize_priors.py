@@ -1,3 +1,5 @@
+from box_utils import calculate_iou
+import base64
 import paths
 from collections import defaultdict
 import os
@@ -22,8 +24,6 @@ import argparse
 import csv
 matplotlib.use('Agg')
 csv.field_size_limit(sys.maxsize)
-import base64
-from box_utils import calculate_iou
 
 
 def get_prior_predictions(boxes, object_ids, cooccurrence, vg2name,
@@ -231,7 +231,7 @@ if __name__ == '__main__':
   parser.add_argument('--box_size', type=int,  default=20,
                       help='box size for fov centers, default=20')
   parser.add_argument('--cache_root', type=str,
-                      default='../data/cached_data_60degrees',
+                      default='../data/r360tiny_data/cached_data_60degrees',
                       help='cache_root, default="../data/r360tiny_data/cached_data_60degrees"')
   parser.add_argument('--data_root', type=str,
                       default='../data/r360tiny_data',
@@ -240,11 +240,11 @@ if __name__ == '__main__':
                       default='visualize_out',
                       help='dump root, default="visualize_r360tiny_out/"')
   parser.add_argument('--butd_filename', type=str,
-                      default='/projects1/Matterport3DSimulator/img_features/r360tiny_60degrees_obj36.tsv',
-                      help='object detection file, default="/projects1/Matterport3DSimulator/img_features/r360tiny_60degrees_obj36.tsv"')
+                      default='../data/r360tiny_data/img_features/r360tiny_60degrees_obj36.tsv',
+                      help='object detection file, default="../data/r360tiny_data/img_features/r360tiny_60degrees_obj36.tsv"')
   parser.add_argument('--cooccurrence_file', type=str,
-                      default='/projects1/Matterport3DSimulator/cooccurrences/cooccurrence.diagonal.npy',
-                      help='object detection file, default="/projects1/Matterport3DSimulator/cooccurrences/cooccurrence.diagonal.npy"')
+                      default='../data/cooccurrences/cooccurrence.diagonal.npy',
+                      help='object detection file, default="../data/cooccurrences/cooccurrence.diagonal.npy"')
   parser.add_argument('--obj_dict_file', type=str,
                       default='../data/vg_object_dictionaries.all.json',
                       help='object detection file, default="../data/vg_object_dictionaries.all.json"')
@@ -394,10 +394,6 @@ if __name__ == '__main__':
     if target_coor is not None:
       img = add_overlay(img, target_img, target_coor, ignore=[255, 255, 255])
 
-    for jj, refexp in enumerate(datum['refexp']):
-      refer = " ".join(refexp)
-      cv2.putText(img, refer, (5, (jj+2)*10), font, 0.35, (0, 0, 255), 1)
-
     for obj_id in range(boxes.shape[0]):
       box = [int(v) for v in boxes[obj_id]]
       label = vg2name.get(obj_ids[obj_id], '</s>')
@@ -410,15 +406,43 @@ if __name__ == '__main__':
     mask = cam.get_mask()
     grid = cv2.bitwise_and(grid, mask)
 
-    original = cv2.resize(panels['original'], (800, 400))
-    grid = cv2.resize(grid, (800, 400))
-    mask = cv2.resize(panels['mask'], (800, 400))
-    semantic = cv2.resize(panels['semantic'], (800, 400))
-    resized_img = cv2.resize(img, (800, 800))
+    original = cv2.resize(panels['original'], (1800, 900))
+    grid = cv2.resize(grid, (1800, 900))
+    mask = cv2.resize(panels['mask'], (1800, 900))
+    semantic = cv2.resize(panels['semantic'], (1800, 900))
+    for jj, refexp in enumerate(datum['refexp']):
+      refer = " ".join(refexp)
+      cv2.putText(original, refer, (5, (jj+1)*30),
+                  font, 1.15, (0, 0, 255), 2)
 
+    #resized_img = cv2.resize(img, (800, 800))
+    peripheral = [np.zeros((600, 600, 3), dtype='uint8')]*9
+    neighbors = cam.nodes[gt_path[fov_id]]['dir2neighbor']
+    for kk, direction in enumerate(['ul', 'u', 'ur', 'l', 'c', 'r', 'dl', 'd', 'dr']):
+      if direction in neighbors:
+        peripheral[kk] = cv2.resize(cv2.cvtColor(
+            cam.fovs[neighbors[direction]], cv2.COLOR_RGB2BGR), (600, 600))
+        if direction not in dir_probs:
+          continue
+        for nn, obj in enumerate(dir_probs[direction]):
+          obj_info = '{}:{:2.2f}'.format(obj, dir_probs[direction][obj])
+          cv2.putText(peripheral[kk], obj_info, (5, (nn+1)*30),
+                      font, 1.15, (0, 0, 255), 2)
+
+    peripheral[4] = cv2.resize(img, (600, 600))
+
+    row0 = np.concatenate(
+        (peripheral[0], peripheral[1], peripheral[2]), axis=1)
+    row1 = np.concatenate(
+        (peripheral[3], peripheral[4], peripheral[5]), axis=1)
+    row2 = np.concatenate(
+        (peripheral[6], peripheral[7], peripheral[8]), axis=1)
+
+    column0 = np.concatenate((row0, row1, row2), axis=0)
     column1 = np.concatenate((original, grid), axis=0)
-    column2 = np.concatenate((mask, semantic), axis=0)
-    combined = np.concatenate((resized_img, column1, column2), axis=1)
+    #column2 = np.concatenate((mask, semantic), axis=0)
+    #combined = np.concatenate((column0, column1, column2), axis=1)
+    combined = np.concatenate((column0, column1), axis=1)
     cv2.imshow(
         "Use left/right arrows to move FoV. (n)ext (p)revious example. (c)lose", combined)
     prefix = '{}.{}'.format(actionid, fov_id)
